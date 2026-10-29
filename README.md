@@ -32,9 +32,15 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 3. Ative **Modo do desenvolvedor** (canto superior direito).
 4. Clique em **Carregar sem compactação** → escolha a pasta do projeto (a que contém o `manifest.json`).
 5. A extensão **Capturador de Cookie** aparece na lista (como abaixo).
-6. Clique com o **botão esquerdo** no ícone da extensão para abrir o painel de configuração (popup).
+6. Clique com o **botão esquerdo** no ícone da extensão (toolbar) para abrir o painel de configuração (popup).
 
-![Chrome extensions: Developer mode and Load unpacked](docs/images/chrome-carregar-extensao.png)
+**Chrome — carregar a extensão**
+
+![Chrome extensions: Developer mode, Load unpacked, Capturador de Cookie](docs/images/chrome-carregar-extensao.png)
+
+**Tela inicial da extensão** (popup ao clicar no ícone)
+
+![Popup inicial do Capturador de Cookie](docs/images/popup-inicial.png)
 
 Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recarregar** na extensão (obrigatório se mudou `permissions` / `manifest`).
 
