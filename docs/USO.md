@@ -9,8 +9,9 @@ Depois que você faz login no site de exemplo, a extensão manda o `Cookie` da s
 1. Instale a extensão (ver README → Instalação).
 2. Abra as **Opções**.
 3. Preencha a **URL para capturar / monitorar** e o **tipo de domínio** (principal ou subdomínio).
-4. Cole a URL do webhook → intervalo (ex.: 12) → **Salvar** → aceite as permissões (site + webhook).
-5. Clique **Enviar agora** com a sessão aberta na URL monitorada, para validar o receptor.
+4. Cole a URL do webhook. Se o receptor exigir auth, escolha **Bearer** ou **Header** (nome + valor).
+5. Intervalo (ex.: 12) → **Salvar** → aceite as permissões (site + webhook).
+6. Clique **Enviar agora** com a sessão aberta na URL monitorada, para validar o receptor.
 
 Checklist no JSON recebido:
 

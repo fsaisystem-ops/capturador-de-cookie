@@ -78,6 +78,25 @@ assert.strictEqual(validateWebhookUrl("totally not a url!!!").ok, false);
 assert.strictEqual(validateWebhookUrl("https://hooks.example.com/x").ok, true);
 assert.strictEqual(validateWebhookUrl("hooks.example.com/x").ok, true);
 
+const {
+  buildWebhookAuthHeaders,
+} = require(path.join(__dirname, "..", "lib", "capturador-cookie.js"));
+assert.strictEqual(buildWebhookAuthHeaders("none").ok, true);
+assert.strictEqual(buildWebhookAuthHeaders("bearer", "").ok, false);
+assert.strictEqual(
+  buildWebhookAuthHeaders("bearer", "tok").headers.Authorization,
+  "Bearer tok"
+);
+assert.strictEqual(
+  buildWebhookAuthHeaders("bearer", "Bearer already").headers.Authorization,
+  "Bearer already"
+);
+assert.strictEqual(buildWebhookAuthHeaders("header", "", "X-Api-Key", "").ok, false);
+assert.strictEqual(
+  buildWebhookAuthHeaders("header", "", "X-Api-Key", "secret").headers["X-Api-Key"],
+  "secret"
+);
+
 assert.strictEqual(
   buildCookieHeader([
     { name: "a", value: "1" },

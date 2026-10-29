@@ -9,7 +9,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.6.0 (ver `manifest.json`) |
+| **Versão** | 1.7.0 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice
@@ -51,9 +51,13 @@ Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recar
    - **Subdomínio** — monitora o host exato da URL (`www.example.com`).
    - **Domínio principal** — trata o registrável (`example.com`) e hosts sob ele (ver [Domínio principal vs subdomínio](#domínio-principal-vs-subdomínio)).
 3. **URL do webhook** — ex.: `https://webhook.site/<uuid>` ou endpoint n8n/Make.
-4. **Intervalo (horas)** — padrão `12` (reload “comum”; ver [Quando dispara](#quando-dispara)).
-5. **Salvar** — o Chrome pede permissão do **host da captura** e do **webhook**; aceite.
-6. **Enviar agora** — teste manual (ignora o throttle).
+4. **Autenticação do webhook**
+   - **Nenhuma** — só `Content-Type: application/json`
+   - **Bearer token** — envia `Authorization: Bearer <token>`
+   - **Header custom** — nome + valor (ex.: `X-Api-Key` / `secret`)
+5. **Intervalo (horas)** — padrão `12` (reload “comum”; ver [Quando dispara](#quando-dispara)).
+6. **Salvar** — o Chrome pede permissão do **host da captura** e do **webhook**; aceite.
+7. **Enviar agora** — teste manual (ignora o throttle).
 
 Sem webhook ou sem URL de captura salvos, a extensão não envia.
 

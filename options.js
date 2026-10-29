@@ -2,6 +2,7 @@ const {
   validateWebhookUrl,
   validateCaptureUrl,
   parseCaptureTarget,
+  buildWebhookAuthHeaders,
   DEFAULT_INTERVAL_HOURS,
   TARGET_REQUEST_URL,
   DOMAIN_MODE_PRINCIPAL,
@@ -14,6 +15,12 @@ const el = {
   domainMode: document.getElementById("domainMode"),
   domainHint: document.getElementById("domainHint"),
   webhookUrl: document.getElementById("webhookUrl"),
+  webhookAuthType: document.getElementById("webhookAuthType"),
+  webhookBearerToken: document.getElementById("webhookBearerToken"),
+  webhookHeaderName: document.getElementById("webhookHeaderName"),
+  webhookHeaderValue: document.getElementById("webhookHeaderValue"),
+  authBearerFields: document.getElementById("authBearerFields"),
+  authHeaderFields: document.getElementById("authHeaderFields"),
   intervalHours: document.getElementById("intervalHours"),
   lastSent: document.getElementById("lastSent"),
   activeTarget: document.getElementById("activeTarget"),
@@ -52,6 +59,12 @@ function updateDomainHint() {
   }
 }
 
+function updateAuthFields() {
+  const type = (el.webhookAuthType && el.webhookAuthType.value) || "none";
+  if (el.authBearerFields) el.authBearerFields.hidden = type !== "bearer";
+  if (el.authHeaderFields) el.authHeaderFields.hidden = type !== "header";
+}
+
 function renderActiveTarget(data) {
   const parsed = parseCaptureTarget(
     data.captureUrl || el.captureUrl.value,
@@ -73,10 +86,19 @@ function readFormDraft() {
     webhookUrl: el.webhookUrl.value.trim(),
     intervalHours:
       Number.isFinite(hours) && hours >= 1 ? hours : DEFAULT_INTERVAL_HOURS,
+    webhookAuthType: (el.webhookAuthType && el.webhookAuthType.value) || "none",
+    webhookBearerToken: el.webhookBearerToken
+      ? el.webhookBearerToken.value.trim()
+      : "",
+    webhookHeaderName: el.webhookHeaderName
+      ? el.webhookHeaderName.value.trim()
+      : "",
+    webhookHeaderValue: el.webhookHeaderValue
+      ? el.webhookHeaderValue.value.trim()
+      : "",
   };
 }
 
-/** Persiste o que está nos campos para o popup não apagar ao fechar. */
 async function persistDraft() {
   const draft = readFormDraft();
   await chrome.storage.local.set({
@@ -84,6 +106,10 @@ async function persistDraft() {
     domainMode: draft.domainMode,
     webhookUrl: draft.webhookUrl,
     intervalHours: draft.intervalHours,
+    webhookAuthType: draft.webhookAuthType,
+    webhookBearerToken: draft.webhookBearerToken,
+    webhookHeaderName: draft.webhookHeaderName,
+    webhookHeaderValue: draft.webhookHeaderValue,
   });
 }
 
@@ -104,8 +130,21 @@ async function refresh() {
     el.webhookUrl.value = data.webhookUrl || "";
     el.intervalHours.value =
       data.intervalHours != null ? data.intervalHours : DEFAULT_INTERVAL_HOURS;
+    if (el.webhookAuthType) {
+      el.webhookAuthType.value = data.webhookAuthType || "none";
+    }
+    if (el.webhookBearerToken) {
+      el.webhookBearerToken.value = data.webhookBearerToken || "";
+    }
+    if (el.webhookHeaderName) {
+      el.webhookHeaderName.value = data.webhookHeaderName || "";
+    }
+    if (el.webhookHeaderValue) {
+      el.webhookHeaderValue.value = data.webhookHeaderValue || "";
+    }
     el.lastSent.textContent = formatLastSent(data.lastSentAt);
     updateDomainHint();
+    updateAuthFields();
     renderActiveTarget(data);
   } finally {
     refreshing = false;
@@ -158,6 +197,13 @@ el.domainMode.addEventListener("change", () => {
   schedulePersistDraft();
 });
 
+if (el.webhookAuthType) {
+  el.webhookAuthType.addEventListener("change", () => {
+    updateAuthFields();
+    schedulePersistDraft();
+  });
+}
+
 el.captureUrl.addEventListener("input", () => {
   renderActiveTarget({
     captureUrl: el.captureUrl.value,
@@ -168,16 +214,26 @@ el.captureUrl.addEventListener("input", () => {
 
 el.webhookUrl.addEventListener("input", schedulePersistDraft);
 el.intervalHours.addEventListener("input", schedulePersistDraft);
+if (el.webhookBearerToken) {
+  el.webhookBearerToken.addEventListener("input", schedulePersistDraft);
+}
+if (el.webhookHeaderName) {
+  el.webhookHeaderName.addEventListener("input", schedulePersistDraft);
+}
+if (el.webhookHeaderValue) {
+  el.webhookHeaderValue.addEventListener("input", schedulePersistDraft);
+}
 
 el.captureUrl.addEventListener("blur", () => persistDraft().catch(() => {}));
 el.webhookUrl.addEventListener("blur", () => persistDraft().catch(() => {}));
 el.intervalHours.addEventListener("blur", () => persistDraft().catch(() => {}));
 
 el.save.addEventListener("click", async () => {
-  const captureRaw = el.captureUrl.value.trim();
-  const domainMode = el.domainMode.value;
-  const rawWebhook = el.webhookUrl.value.trim();
-  const hours = Number(el.intervalHours.value);
+  const draft = readFormDraft();
+  const captureRaw = draft.captureUrl;
+  const domainMode = draft.domainMode;
+  const rawWebhook = draft.webhookUrl;
+  const hours = draft.intervalHours;
 
   const captureCheck = validateCaptureUrl(captureRaw);
   if (!captureCheck.ok) {
@@ -197,6 +253,17 @@ el.save.addEventListener("click", async () => {
   }
   if (!Number.isFinite(hours) || hours < 1) {
     setStatus("Intervalo deve ser um número ≥ 1");
+    return;
+  }
+
+  const authCheck = buildWebhookAuthHeaders(
+    draft.webhookAuthType,
+    draft.webhookBearerToken,
+    draft.webhookHeaderName,
+    draft.webhookHeaderValue
+  );
+  if (!authCheck.ok) {
+    setStatus(authCheck.error);
     return;
   }
 
@@ -220,6 +287,10 @@ el.save.addEventListener("click", async () => {
     domainMode: target.domainMode,
     webhookUrl: webhookNormalized,
     intervalHours: hours,
+    webhookAuthType: draft.webhookAuthType,
+    webhookBearerToken: draft.webhookBearerToken,
+    webhookHeaderName: draft.webhookHeaderName,
+    webhookHeaderValue: draft.webhookHeaderValue,
   });
   await chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" });
   await refresh();
@@ -255,4 +326,5 @@ el.sendNow.addEventListener("click", async () => {
 });
 
 updateDomainHint();
+updateAuthFields();
 refresh().catch((e) => setStatus(String(e)));

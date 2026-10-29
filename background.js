@@ -94,6 +94,10 @@ async function getSettings() {
     lastCookieHeader: "",
     captureUrl: TARGET_REQUEST_URL,
     domainMode: "subdominio",
+    webhookAuthType: "none",
+    webhookBearerToken: "",
+    webhookHeaderName: "",
+    webhookHeaderValue: "",
   });
   await loadCaptureConfig();
   return { ...data, ...liveConfig };
@@ -174,10 +178,21 @@ async function readWebStorageFromTab() {
   }
 }
 
-async function postWebhook(webhookUrl, payload) {
+async function postWebhook(webhookUrl, payload, settings) {
+  const auth = CapturadorCookie.buildWebhookAuthHeaders(
+    settings.webhookAuthType,
+    settings.webhookBearerToken,
+    settings.webhookHeaderName,
+    settings.webhookHeaderValue
+  );
+  if (!auth.ok) {
+    const err = new Error(auth.error);
+    err.authConfig = true;
+    throw err;
+  }
   return fetch(webhookUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: auth.headers,
     body: JSON.stringify(payload),
   });
 }
@@ -242,7 +257,7 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
 
     let res;
     try {
-      res = await postWebhook(webhookUrl, payload);
+      res = await postWebhook(webhookUrl, payload, settings);
     } catch (e) {
       return { ok: false, error: String(e && e.message ? e.message : e) };
     }

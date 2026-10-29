@@ -28,6 +28,7 @@
     .example-link button { padding: 0.2rem 0.5rem; font-size: 0.8rem; cursor: pointer; }
     .footer-link { margin-top: 0.75rem; }
     .footer-link button { width: 100%; }
+    .auth-fields { margin-top: 0.35rem; }
   </style>
 </head>
 <body>
@@ -56,6 +57,23 @@
     <button id="copyWebhookExample" type="button" title="Copiar link">Copiar</button>
   </div>
   <p class="hint">Abra, copie a URL única e cole acima.</p>
+
+  <label for="webhookAuthType">Auth do webhook</label>
+  <select id="webhookAuthType">
+    <option value="none">Nenhuma</option>
+    <option value="bearer">Bearer token</option>
+    <option value="header">Header (nome + valor)</option>
+  </select>
+  <div id="authBearerFields" class="auth-fields" hidden>
+    <label for="webhookBearerToken">Token Bearer</label>
+    <input id="webhookBearerToken" type="password" placeholder="seu-token" autocomplete="off" />
+  </div>
+  <div id="authHeaderFields" class="auth-fields" hidden>
+    <label for="webhookHeaderName">Nome do header</label>
+    <input id="webhookHeaderName" type="text" placeholder="X-Api-Key" autocomplete="off" />
+    <label for="webhookHeaderValue">Valor do header</label>
+    <input id="webhookHeaderValue" type="password" placeholder="valor" autocomplete="off" />
+  </div>
 
   <label for="intervalHours">Intervalo (horas)</label>
   <input id="intervalHours" type="number" min="1" step="1" />

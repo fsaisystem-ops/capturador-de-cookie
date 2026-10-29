@@ -1,7 +1,7 @@
 {
   "name": "capturador-de-cookie",
-  "version": "1.6.0",
-  "description": "Capturador de Cookie — Cookie + localStorage/sessionStorage → webhook.",
+  "version": "1.7.0",
+  "description": "Capturador de Cookie — Cookie + storage → webhook (Bearer ou header auth).",
   "private": true,
   "scripts": {
     "test": "node tests/capturador-cookie.test.js",

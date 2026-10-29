@@ -18,6 +18,7 @@
     .example-link { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.35rem; font-size: 0.9rem; }
     .example-link a { color: #0b57d0; word-break: break-all; }
     .example-link button { padding: 0.25rem 0.6rem; font-size: 0.85rem; cursor: pointer; }
+    .auth-fields { margin-top: 0.5rem; }
   </style>
 </head>
 <body>
@@ -46,6 +47,24 @@
     <button id="copyWebhookExample" type="button" title="Copiar link">Copiar</button>
   </div>
   <p class="hint">Abra o link, copie a URL única da página e cole no campo acima para validar o envio.</p>
+
+  <label for="webhookAuthType">Autenticação do webhook</label>
+  <select id="webhookAuthType">
+    <option value="none">Nenhuma</option>
+    <option value="bearer">Bearer token (Authorization)</option>
+    <option value="header">Header custom (nome + valor)</option>
+  </select>
+  <div id="authBearerFields" class="auth-fields" hidden>
+    <label for="webhookBearerToken">Token Bearer</label>
+    <input id="webhookBearerToken" type="password" placeholder="seu-token" autocomplete="off" />
+    <p class="hint">Envia <code>Authorization: Bearer …</code></p>
+  </div>
+  <div id="authHeaderFields" class="auth-fields" hidden>
+    <label for="webhookHeaderName">Nome do header</label>
+    <input id="webhookHeaderName" type="text" placeholder="X-Api-Key" autocomplete="off" />
+    <label for="webhookHeaderValue">Valor do header</label>
+    <input id="webhookHeaderValue" type="password" placeholder="valor" autocomplete="off" />
+  </div>
 
   <label for="intervalHours">Intervalo (horas)</label>
   <input id="intervalHours" type="number" min="1" step="1" />
