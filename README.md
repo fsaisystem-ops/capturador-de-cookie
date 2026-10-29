@@ -9,7 +9,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.4.0 (ver `manifest.json`) |
+| **Versão** | 1.4.1 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice

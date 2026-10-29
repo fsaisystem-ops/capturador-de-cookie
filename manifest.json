@@ -1,16 +1,26 @@
 {
   "manifest_version": 3,
   "name": "Capturador de Cookie",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Captura o Cookie de uma URL configurável (domínio principal ou subdomínio) e envia para um webhook.",
   "permissions": ["cookies", "storage", "tabs", "webRequest"],
   "host_permissions": ["https://www.example.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "background": {
     "service_worker": "background.js"
   },
   "options_page": "options.html",
   "action": {
-    "default_title": "Capturador de Cookie — abra Opções"
+    "default_title": "Capturador de Cookie — abra Opções",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }

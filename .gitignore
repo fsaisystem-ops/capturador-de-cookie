@@ -2,4 +2,7 @@ node_modules/
 .superpowers/
 package-lock.json
 docs/images/_shot.mjs
+icons/make-icons.py
+icons/icon-master.jpg
+icons/logo-source.png
 
