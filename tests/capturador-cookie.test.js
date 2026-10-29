@@ -111,4 +111,20 @@ assert.strictEqual(payload.host, "www.example.com");
 assert.strictEqual(payload.domainMode, DOMAIN_MODE_SUBDOMINIO);
 assert.strictEqual(payload.cookieHeader, "a=1");
 
+const withStorage = buildPayload({
+  url: "https://www.example.com/app",
+  cookieHeader: "a=1",
+  cookies: [],
+  config: sub,
+  webStorage: {
+    localStorage: { token: "abc" },
+    sessionStorage: { flag: "1" },
+    pageUrl: "https://www.example.com/app",
+    storageSource: "tab",
+  },
+});
+assert.strictEqual(withStorage.localStorage.token, "abc");
+assert.deepStrictEqual(withStorage.localStorageKeys, ["token"]);
+assert.strictEqual(withStorage.storageSource, "tab");
+
 console.log("All capturador-cookie helper tests passed.");

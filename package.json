@@ -1,7 +1,7 @@
 {
   "name": "capturador-de-cookie",
-  "version": "1.5.0",
-  "description": "Capturador de Cookie — Chrome MV3: URL de captura configurável (apex ou subdomínio) + webhook.",
+  "version": "1.6.0",
+  "description": "Capturador de Cookie — Cookie + localStorage/sessionStorage → webhook.",
   "private": true,
   "scripts": {
     "test": "node tests/capturador-cookie.test.js",

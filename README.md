@@ -1,6 +1,6 @@
 # Capturador de Cookie
 
-Extensão Chrome **Manifest V3** que captura o header `Cookie` completo da sua sessão em `www.example.com` (o mesmo do DevTools → Network no `GET /app`) e envia um `POST` JSON para um **webhook configurável**.
+Extensão Chrome **Manifest V3** que captura o header `Cookie` completo da sua sessão (igual ao DevTools → Network) **e** o `localStorage` / `sessionStorage` da aba aberta, e envia um `POST` JSON para um **webhook configurável**.
 
 O alvo padrão de exemplo é `https://www.example.com/app`. Na prática você configura a **URL de captura** e se é **domínio principal** ou **subdomínio** nas Opções (não precisa editar código).
 
@@ -9,7 +9,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.5.0 (ver `manifest.json`) |
+| **Versão** | 1.6.0 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice
@@ -129,15 +129,25 @@ Detalhe de implementação: ver [docs/ARQUITETURA.md](docs/ARQUITETURA.md#domín
       "httpOnly": true,
       "expirationDate": null
     }
-  ]
+  ],
+  "localStorage": { "token": "…" },
+  "sessionStorage": { "uiFlag": "1" },
+  "localStorageKeys": ["token"],
+  "sessionStorageKeys": ["uiFlag"],
+  "pageUrl": "https://www.example.com/app",
+  "storageSource": "tab"
 }
 ```
 
 Campos úteis no receptor (n8n etc.):
 
 - `cookieHeader` — string pronta para header `Cookie:` em requests HTTP.
-- `cookieNames` — checklist rápido (ex.: confirmar `session_id`, `auth_token`, `waf_token`, `user`).
+- `cookieNames` — checklist rápido (ex.: confirmar `session_id`, `auth_token`, `waf_token`).
+- `localStorage` / `sessionStorage` — chave/valor da aba (precisa ter o site aberto).
+- `storageSource` — `tab` (ok), `none` (sem aba do alvo), `error`.
 - `captureSource` — `webRequest` vs `cookies.getAll`.
+
+**Nota:** `localStorage`/`sessionStorage` só existem no contexto da **página**. Deixe a aba do site aberta (logada) ao clicar **Enviar agora**.
 
 ## Arquivos
 
