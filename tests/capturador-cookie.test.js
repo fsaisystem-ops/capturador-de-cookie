@@ -35,7 +35,16 @@ assert.strictEqual(apex.ok, true);
 assert.strictEqual(apex.domainMode, DOMAIN_MODE_PRINCIPAL);
 assert.strictEqual(apex.cookieDomain, "example.com");
 
-assert.strictEqual(validateCaptureUrl("not-a-url").ok, false);
+assert.strictEqual(validateCaptureUrl("not a url").ok, false);
+assert.strictEqual(
+  validateCaptureUrl("https://www.obraprimaweb.com.br/").ok,
+  true
+);
+assert.strictEqual(validateCaptureUrl("www.example.com/app").ok, true);
+assert.strictEqual(validateWebhookUrl("").ok, false);
+assert.ok(
+  String(validateWebhookUrl("").error).toLowerCase().includes("webhook")
+);
 assert.strictEqual(isTargetUrl("https://www.example.com/app", sub), true);
 assert.strictEqual(isTargetUrl("https://evil.com/", sub), false);
 assert.strictEqual(isCaptureUrl("https://www.example.com/app", sub), true);
@@ -65,8 +74,9 @@ assert.strictEqual(shouldSend(1000, 0, 12), true);
 assert.strictEqual(shouldSend(1000, 999, 12), false);
 const twelveH = 12 * 60 * 60 * 1000;
 assert.strictEqual(shouldSend(twelveH + 1, 1, 12), true);
-assert.strictEqual(validateWebhookUrl("not-a-url").ok, false);
+assert.strictEqual(validateWebhookUrl("totally not a url!!!").ok, false);
 assert.strictEqual(validateWebhookUrl("https://hooks.example.com/x").ok, true);
+assert.strictEqual(validateWebhookUrl("hooks.example.com/x").ok, true);
 
 assert.strictEqual(
   buildCookieHeader([

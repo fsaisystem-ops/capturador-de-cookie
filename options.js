@@ -200,6 +200,8 @@ el.save.addEventListener("click", async () => {
     return;
   }
 
+  const webhookNormalized = webhookCheck.url.toString();
+
   try {
     const granted = await chrome.permissions.request({
       origins: [target.originPattern, webhookCheck.originPattern],
@@ -216,7 +218,7 @@ el.save.addEventListener("click", async () => {
   await chrome.storage.local.set({
     captureUrl: target.captureUrl,
     domainMode: target.domainMode,
-    webhookUrl: rawWebhook,
+    webhookUrl: webhookNormalized,
     intervalHours: hours,
   });
   await chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" });
