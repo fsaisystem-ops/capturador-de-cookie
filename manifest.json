@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Capturador de Cookie",
-  "version": "1.3.0",
-  "description": "Envia o Cookie completo do GET https://www.example.com/app (igual ao Network) para um webhook configurável.",
+  "version": "1.4.0",
+  "description": "Captura o Cookie de uma URL configurável (domínio principal ou subdomínio) e envia para um webhook.",
   "permissions": ["cookies", "storage", "tabs", "webRequest"],
   "host_permissions": ["https://www.example.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],

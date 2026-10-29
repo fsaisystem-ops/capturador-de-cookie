@@ -1,11 +1,13 @@
 importScripts("lib/capturador-cookie.js");
 
 const {
-  COOKIE_DOMAIN,
-  TARGET_REQUEST_URL,
   DEFAULT_INTERVAL_HOURS,
+  TARGET_REQUEST_URL,
+  defaultCaptureConfig,
+  parseCaptureTarget,
   isTargetUrl,
   isCaptureUrl,
+  cookieBelongsToTarget,
   shouldSend,
   buildPayload,
 } = CapturadorCookie;
@@ -16,24 +18,90 @@ let debounceTimer = null;
 let sending = false;
 /** @type {{ cookieHeader: string, url: string, method: string } | null} */
 let lastNetworkCapture = null;
+/** @type {ReturnType<typeof defaultCaptureConfig>} */
+let liveConfig = defaultCaptureConfig();
+
+async function loadCaptureConfig() {
+  const data = await chrome.storage.local.get({
+    captureUrl: TARGET_REQUEST_URL,
+    domainMode: "subdominio",
+  });
+  const parsed = parseCaptureTarget(data.captureUrl, data.domainMode);
+  if (!parsed.ok) {
+    liveConfig = defaultCaptureConfig();
+    return liveConfig;
+  }
+  liveConfig = {
+    captureUrl: parsed.captureUrl,
+    domainMode: parsed.domainMode,
+    targetHost: parsed.targetHost,
+    cookieDomain: parsed.cookieDomain,
+    originPattern: parsed.originPattern,
+  };
+  return liveConfig;
+}
+
+function onBeforeSendHeaders(details) {
+  if (details.method !== "GET") return;
+  if (!isCaptureUrl(details.url, liveConfig)) return;
+  const headers = details.requestHeaders || [];
+  const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
+  if (!cookieHdr || !cookieHdr.value) return;
+
+  lastNetworkCapture = {
+    cookieHeader: cookieHdr.value,
+    url: details.url,
+    method: details.method,
+  };
+  console.log(
+    "capturador-cookie captured Cookie length=",
+    cookieHdr.value.length
+  );
+  scheduleSend("network-capture", true);
+}
+
+function bindWebRequest() {
+  try {
+    if (chrome.webRequest.onBeforeSendHeaders.hasListener(onBeforeSendHeaders)) {
+      chrome.webRequest.onBeforeSendHeaders.removeListener(onBeforeSendHeaders);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  const pattern = liveConfig && liveConfig.originPattern;
+  if (!pattern) return;
+  try {
+    chrome.webRequest.onBeforeSendHeaders.addListener(
+      onBeforeSendHeaders,
+      { urls: [pattern], types: ["main_frame"] },
+      ["requestHeaders", "extraHeaders"]
+    );
+  } catch (e) {
+    console.warn("capturador-cookie webRequest bind failed:", e);
+  }
+}
+
+async function refreshConfigAndBindings() {
+  await loadCaptureConfig();
+  bindWebRequest();
+}
 
 async function getSettings() {
-  return chrome.storage.local.get({
+  const data = await chrome.storage.local.get({
     webhookUrl: "",
     intervalHours: DEFAULT_INTERVAL_HOURS,
     lastSentAt: 0,
     lastCookieHeader: "",
+    captureUrl: TARGET_REQUEST_URL,
+    domainMode: "subdominio",
   });
+  await loadCaptureConfig();
+  return { ...data, ...liveConfig };
 }
 
 async function readCookiesForCaptureUrl() {
-  return chrome.cookies.getAll({ url: TARGET_REQUEST_URL });
-}
-
-function cookieBelongsToTarget(cookie) {
-  if (!cookie || !cookie.domain) return false;
-  const d = String(cookie.domain).replace(/^\./, "").toLowerCase();
-  return d === COOKIE_DOMAIN || d.endsWith("." + COOKIE_DOMAIN);
+  const url = liveConfig.captureUrl || TARGET_REQUEST_URL;
+  return chrome.cookies.getAll({ url });
 }
 
 async function postWebhook(webhookUrl, payload) {
@@ -55,6 +123,9 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     if (!webhookUrl) {
       return { ok: false, error: "Webhook não configurado" };
     }
+    if (!(settings.captureUrl || "").trim()) {
+      return { ok: false, error: "URL de captura não configurada" };
+    }
 
     const now = Date.now();
     if (!force && !shouldSend(now, settings.lastSentAt, settings.intervalHours)) {
@@ -73,14 +144,15 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     }
 
     const payload = buildPayload({
-      url: (capture && capture.url) || tabUrl || TARGET_REQUEST_URL,
+      url: (capture && capture.url) || tabUrl || liveConfig.captureUrl,
       cookies: jar,
       cookieHeader,
       capturedAt: new Date().toISOString(),
       request: {
-        url: (capture && capture.url) || TARGET_REQUEST_URL,
+        url: (capture && capture.url) || liveConfig.captureUrl,
         method: (capture && capture.method) || "GET",
       },
+      config: liveConfig,
     });
     payload.trigger = reason || (force ? "force" : "auto");
     payload.captureSource =
@@ -126,7 +198,7 @@ function scheduleSend(reason, force) {
     debounceTimer = null;
     try {
       const result = await sendCookies({
-        tabUrl: TARGET_REQUEST_URL,
+        tabUrl: liveConfig.captureUrl,
         force: !!force,
         reason,
         networkCapture: lastNetworkCapture,
@@ -149,44 +221,18 @@ function scheduleSend(reason, force) {
   }, DEBOUNCE_MS);
 }
 
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    if (details.method !== "GET") return;
-    if (!isCaptureUrl(details.url)) return;
-    const headers = details.requestHeaders || [];
-    const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
-    if (!cookieHdr || !cookieHdr.value) return;
-
-    lastNetworkCapture = {
-      cookieHeader: cookieHdr.value,
-      url: details.url,
-      method: details.method,
-    };
-    console.log(
-      "capturador-cookie captured Cookie length=",
-      cookieHdr.value.length
-    );
-    scheduleSend("network-capture", true);
-  },
-  {
-    urls: ["https://www.example.com/app*"],
-    types: ["main_frame"],
-  },
-  ["requestHeaders", "extraHeaders"]
-);
-
 chrome.cookies.onChanged.addListener((changeInfo) => {
   if (changeInfo.removed) return;
-  if (!cookieBelongsToTarget(changeInfo.cookie)) return;
+  if (!cookieBelongsToTarget(changeInfo.cookie, liveConfig)) return;
   scheduleSend("login", true);
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete") return;
   const url = tab && tab.url;
-  if (!url || !isTargetUrl(url)) return;
+  if (!url || !isTargetUrl(url, liveConfig)) return;
   try {
-    const force = isCaptureUrl(url);
+    const force = isCaptureUrl(url, liveConfig);
     const result = await sendCookies({
       tabUrl: url,
       force,
@@ -201,12 +247,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes.captureUrl || changes.domainMode) {
+    refreshConfigAndBindings();
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     if (msg && msg.type === "SEND_NOW") {
       sendResponse(
         await sendCookies({
-          tabUrl: msg.url || TARGET_REQUEST_URL,
+          tabUrl: msg.url || liveConfig.captureUrl,
           force: true,
           reason: "send-now",
           networkCapture: lastNetworkCapture,
@@ -218,7 +271,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse(await getSettings());
       return;
     }
+    if (msg && msg.type === "CONFIG_UPDATED") {
+      await refreshConfigAndBindings();
+      sendResponse({ ok: true, config: liveConfig });
+      return;
+    }
     sendResponse({ ok: false, error: "Mensagem desconhecida" });
   })();
   return true;
 });
+
+refreshConfigAndBindings();

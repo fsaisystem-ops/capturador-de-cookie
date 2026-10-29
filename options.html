@@ -6,16 +6,28 @@
   <style>
     body { font-family: system-ui, sans-serif; max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
     label { display: block; margin-top: 1rem; font-weight: 600; }
-    input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+    input, select { width: 100%; padding: 0.5rem; box-sizing: border-box; }
     .row { margin-top: 1rem; display: flex; gap: 0.5rem; }
     button { padding: 0.5rem 1rem; cursor: pointer; }
     #status { margin-top: 1rem; min-height: 1.5em; }
     .muted { color: #555; }
+    .hint { font-size: 0.9rem; color: #555; margin-top: 0.35rem; }
   </style>
 </head>
 <body>
   <h1>Capturador de Cookie</h1>
-  <p class="muted">Captura o header <code>Cookie</code> completo do GET <code>https://www.example.com/app</code> (igual ao Network), inclusive HttpOnly.</p>
+  <p class="muted">Captura o header <code>Cookie</code> da URL que você monitora (igual ao Network), inclusive HttpOnly, e envia ao webhook.</p>
+
+  <label for="captureUrl">URL para capturar / monitorar</label>
+  <input id="captureUrl" type="url" placeholder="https://www.example.com/app" autocomplete="off" />
+  <p class="hint">Ex.: a mesma URL do document request no DevTools → Network.</p>
+
+  <label for="domainMode">Tipo de domínio</label>
+  <select id="domainMode">
+    <option value="subdominio">Subdomínio (ex.: www.example.com, app.example.com)</option>
+    <option value="principal">Domínio principal / apex (ex.: example.com)</option>
+  </select>
+  <p class="hint" id="domainHint">Subdomínio: monitora o host exato da URL. Principal: cookies e abas sob o domínio registrável (ex.: *.example.com).</p>
 
   <label for="webhookUrl">URL do webhook</label>
   <input id="webhookUrl" type="url" placeholder="https://…" autocomplete="off" />
@@ -24,6 +36,7 @@
   <input id="intervalHours" type="number" min="1" step="1" />
 
   <p class="muted">Último envio: <span id="lastSent">nunca</span></p>
+  <p class="muted">Alvo ativo: <span id="activeTarget">—</span></p>
 
   <div class="row">
     <button id="save" type="button">Salvar</button>

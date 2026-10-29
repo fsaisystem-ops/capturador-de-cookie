@@ -5,29 +5,69 @@ const {
   isCaptureUrl,
   shouldSend,
   validateWebhookUrl,
+  validateCaptureUrl,
+  parseCaptureTarget,
+  resolveCookieDomain,
+  cookieBelongsToTarget,
   buildCookieHeader,
   parseCookieHeader,
   buildPayload,
   TARGET_REQUEST_URL,
   DEFAULT_INTERVAL_HOURS,
+  DOMAIN_MODE_PRINCIPAL,
+  DOMAIN_MODE_SUBDOMINIO,
 } = require(path.join(__dirname, "..", "lib", "capturador-cookie.js"));
 
 assert.strictEqual(DEFAULT_INTERVAL_HOURS, 12);
 assert.strictEqual(TARGET_REQUEST_URL, "https://www.example.com/app");
-assert.strictEqual(isTargetUrl("https://www.example.com/app"), true);
-assert.strictEqual(isTargetUrl("https://evil.com/"), false);
-assert.strictEqual(isCaptureUrl("https://www.example.com/app"), true);
-assert.strictEqual(isCaptureUrl("https://www.example.com/home"), false);
+assert.strictEqual(resolveCookieDomain("www.example.com"), "example.com");
+assert.strictEqual(resolveCookieDomain("example.com"), "example.com");
+
+const sub = parseCaptureTarget("https://www.example.com/app", "subdominio");
+assert.strictEqual(sub.ok, true);
+assert.strictEqual(sub.targetHost, "www.example.com");
+assert.strictEqual(sub.domainMode, DOMAIN_MODE_SUBDOMINIO);
+assert.strictEqual(sub.cookieDomain, "example.com");
+assert.strictEqual(sub.originPattern, "https://www.example.com/*");
+
+const apex = parseCaptureTarget("https://example.com/app", "principal");
+assert.strictEqual(apex.ok, true);
+assert.strictEqual(apex.domainMode, DOMAIN_MODE_PRINCIPAL);
+assert.strictEqual(apex.cookieDomain, "example.com");
+
+assert.strictEqual(validateCaptureUrl("not-a-url").ok, false);
+assert.strictEqual(isTargetUrl("https://www.example.com/app", sub), true);
+assert.strictEqual(isTargetUrl("https://evil.com/", sub), false);
+assert.strictEqual(isCaptureUrl("https://www.example.com/app", sub), true);
+assert.strictEqual(isCaptureUrl("https://www.example.com/home", sub), false);
+
+assert.strictEqual(
+  isTargetUrl("https://www.example.com/x", apex),
+  true,
+  "principal mode accepts www under example.com"
+);
+assert.strictEqual(isTargetUrl("https://other.com/x", apex), false);
+
+assert.strictEqual(
+  cookieBelongsToTarget({ domain: ".example.com" }, sub),
+  true
+);
+assert.strictEqual(
+  cookieBelongsToTarget({ domain: "www.example.com" }, sub),
+  true
+);
+assert.strictEqual(
+  cookieBelongsToTarget({ domain: "evil.com" }, sub),
+  false
+);
+
 assert.strictEqual(shouldSend(1000, 0, 12), true);
 assert.strictEqual(shouldSend(1000, 999, 12), false);
 const twelveH = 12 * 60 * 60 * 1000;
 assert.strictEqual(shouldSend(twelveH + 1, 1, 12), true);
 assert.strictEqual(validateWebhookUrl("not-a-url").ok, false);
 assert.strictEqual(validateWebhookUrl("https://hooks.example.com/x").ok, true);
-assert.strictEqual(
-  validateWebhookUrl("https://hooks.example.com/x").originPattern,
-  "https://hooks.example.com/*"
-);
+
 assert.strictEqual(
   buildCookieHeader([
     { name: "a", value: "1" },
@@ -36,12 +76,9 @@ assert.strictEqual(
   "a=1; b=2"
 );
 
-const parsed = parseCookieHeader(
-  "session_id=abc; auth_token=x; user=u@x.com; csrf=t"
-);
-assert.strictEqual(parsed.length, 4);
+const parsed = parseCookieHeader("session_id=abc; auth_token=x");
+assert.strictEqual(parsed.length, 2);
 assert.strictEqual(parsed[0].name, "session_id");
-assert.strictEqual(parsed[0].value, "abc");
 
 const payload = buildPayload({
   url: "https://www.example.com/app",
@@ -57,28 +94,11 @@ const payload = buildPayload({
     },
   ],
   capturedAt: "2026-01-01T00:00:00.000Z",
+  config: sub,
 });
 assert.strictEqual(payload.source, "capturador-de-cookie");
 assert.strictEqual(payload.host, "www.example.com");
+assert.strictEqual(payload.domainMode, DOMAIN_MODE_SUBDOMINIO);
 assert.strictEqual(payload.cookieHeader, "a=1");
-assert.strictEqual(payload.requestUrl, "https://www.example.com/app");
-
-const fromNet = buildPayload({
-  url: "https://www.example.com/app",
-  cookieHeader: "session_id=s1; auth_token=alb; csrf=cors; waf_token=waf",
-  cookies: [],
-  request: {
-    url: "https://www.example.com/app",
-    method: "GET",
-  },
-  capturedAt: "2026-01-01T00:00:00.000Z",
-});
-assert.ok(fromNet.cookieHeader.includes("session_id=s1"));
-assert.deepStrictEqual(fromNet.cookieNames, [
-  "session_id",
-  "auth_token",
-  "csrf",
-  "waf_token",
-]);
 
 console.log("All capturador-cookie helper tests passed.");

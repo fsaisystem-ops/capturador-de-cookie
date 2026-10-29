@@ -2,14 +2,14 @@
 
 Extensão Chrome **Manifest V3** que captura o header `Cookie` completo da sua sessão em `www.example.com` (o mesmo do DevTools → Network no `GET /app`) e envia um `POST` JSON para um **webhook configurável**.
 
-Para apontar a outro site, altere `TARGET_HOST`, `COOKIE_DOMAIN` e `TARGET_REQUEST_URL` em `lib/capturador-cookie.js` e os hosts em `manifest.json` / `background.js`.
+O alvo padrão de exemplo é `https://www.example.com/app`. Na prática você configura a **URL de captura** e se é **domínio principal** ou **subdomínio** nas Opções (não precisa editar código).
 
 Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.site para teste).
 
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.3.0 (ver `manifest.json`) |
+| **Versão** | 1.4.0 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice
@@ -38,12 +38,16 @@ Depois de atualizar o código no disco: na mesma tela, clique **Recarregar** na 
 
 ## Configuração
 
-1. **URL do webhook** — ex.: `https://webhook.site/<uuid>` ou endpoint n8n/Make.
-2. **Intervalo (horas)** — padrão `12` (vale para reload “comum”; ver [Quando dispara](#quando-dispara)).
-3. **Salvar** — o Chrome pede permissão do **host do webhook**; aceite.
-4. **Enviar agora** — teste manual (ignora o throttle).
+1. **URL para capturar / monitorar** — ex.: `https://www.example.com/app` (a mesma do Network).
+2. **Tipo de domínio**
+   - **Subdomínio** — monitora o host exato da URL (`www.example.com`).
+   - **Domínio principal** — trata o registrável (`example.com`) e hosts sob ele (ver [Domínio principal vs subdomínio](#domínio-principal-vs-subdomínio)).
+3. **URL do webhook** — ex.: `https://webhook.site/<uuid>` ou endpoint n8n/Make.
+4. **Intervalo (horas)** — padrão `12` (reload “comum”; ver [Quando dispara](#quando-dispara)).
+5. **Salvar** — o Chrome pede permissão do **host da captura** e do **webhook**; aceite.
+6. **Enviar agora** — teste manual (ignora o throttle).
 
-Sem webhook salvo, a extensão não envia nada.
+Sem webhook ou sem URL de captura salvos, a extensão não envia.
 
 ## Telas
 
