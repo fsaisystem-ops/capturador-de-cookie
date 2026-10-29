@@ -7,6 +7,8 @@ const {
   DOMAIN_MODE_PRINCIPAL,
 } = CapturadorCookie;
 
+const WEBHOOK_EXAMPLE = "https://webhook.site/";
+
 const el = {
   captureUrl: document.getElementById("captureUrl"),
   domainMode: document.getElementById("domainMode"),
@@ -18,6 +20,7 @@ const el = {
   status: document.getElementById("status"),
   save: document.getElementById("save"),
   sendNow: document.getElementById("sendNow"),
+  copyWebhookExample: document.getElementById("copyWebhookExample"),
 };
 
 function setStatus(text) {
@@ -67,6 +70,26 @@ async function refresh() {
   updateDomainHint();
   renderActiveTarget(data);
 }
+
+el.copyWebhookExample.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(WEBHOOK_EXAMPLE);
+    setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
+  } catch (_) {
+    // Fallback if clipboard API is blocked
+    const ta = document.createElement("textarea");
+    ta.value = WEBHOOK_EXAMPLE;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
+    } catch (e) {
+      setStatus("Não deu para copiar — selecione o link manualmente");
+    }
+    ta.remove();
+  }
+});
 
 el.domainMode.addEventListener("change", () => {
   updateDomainHint();

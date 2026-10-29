@@ -15,6 +15,9 @@
     .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
     .brand img { display: block; height: auto; max-width: 200px; background: #0a1628; border-radius: 8px; padding: 0.5rem; }
     .brand h1 { margin: 0; }
+    .example-link { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.35rem; font-size: 0.9rem; }
+    .example-link a { color: #0b57d0; word-break: break-all; }
+    .example-link button { padding: 0.25rem 0.6rem; font-size: 0.85rem; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -37,6 +40,12 @@
 
   <label for="webhookUrl">URL do webhook</label>
   <input id="webhookUrl" type="url" placeholder="https://…" autocomplete="off" />
+  <div class="example-link">
+    <span class="muted">Exemplo para testar:</span>
+    <a id="webhookExampleLink" href="https://webhook.site/" target="_blank" rel="noopener noreferrer">https://webhook.site/</a>
+    <button id="copyWebhookExample" type="button" title="Copiar link">Copiar</button>
+  </div>
+  <p class="hint">Abra o link, copie a URL única da página e cole no campo acima para validar o envio.</p>
 
   <label for="intervalHours">Intervalo (horas)</label>
   <input id="intervalHours" type="number" min="1" step="1" />
