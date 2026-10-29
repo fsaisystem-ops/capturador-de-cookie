@@ -1,0 +1,12 @@
+{
+  "name": "capturador-de-cookie",
+  "version": "1.3.0",
+  "description": "Capturador de Cookie — Chrome MV3: captura Cookie de www.example.com/app e envia para webhook.",
+  "private": true,
+  "scripts": {
+    "test": "node tests/capturador-cookie.test.js",
+    "smoke": "node tests/playwright-smoke.mjs",
+    "smoke:login": "node tests/login-trigger-smoke.mjs"
+  },
+  "license": "UNLICENSED"
+}

