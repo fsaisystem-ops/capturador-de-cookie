@@ -22,7 +22,11 @@ const el = {
   sendNow: document.getElementById("sendNow"),
   copyWebhookExample: document.getElementById("copyWebhookExample"),
   openFullOptions: document.getElementById("openFullOptions"),
+  webhookExampleLink: document.getElementById("webhookExampleLink"),
 };
+
+let draftTimer = null;
+let refreshing = false;
 
 function setStatus(text) {
   el.status.textContent = text || "";
@@ -60,20 +64,57 @@ function renderActiveTarget(data) {
   el.activeTarget.textContent = `${parsed.targetHost} · ${parsed.domainMode} · cookieDomain=${parsed.cookieDomain}`;
 }
 
+function readFormDraft() {
+  const hoursRaw = el.intervalHours.value;
+  const hours = Number(hoursRaw);
+  return {
+    captureUrl: el.captureUrl.value.trim(),
+    domainMode: el.domainMode.value || "subdominio",
+    webhookUrl: el.webhookUrl.value.trim(),
+    intervalHours:
+      Number.isFinite(hours) && hours >= 1 ? hours : DEFAULT_INTERVAL_HOURS,
+  };
+}
+
+/** Persiste o que está nos campos para o popup não apagar ao fechar. */
+async function persistDraft() {
+  const draft = readFormDraft();
+  await chrome.storage.local.set({
+    captureUrl: draft.captureUrl || TARGET_REQUEST_URL,
+    domainMode: draft.domainMode,
+    webhookUrl: draft.webhookUrl,
+    intervalHours: draft.intervalHours,
+  });
+}
+
+function schedulePersistDraft() {
+  if (refreshing) return;
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    persistDraft().catch(() => {});
+  }, 200);
+}
+
 async function refresh() {
-  const data = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
-  el.captureUrl.value = data.captureUrl || TARGET_REQUEST_URL;
-  el.domainMode.value = data.domainMode || "subdominio";
-  el.webhookUrl.value = data.webhookUrl || "";
-  el.intervalHours.value =
-    data.intervalHours != null ? data.intervalHours : DEFAULT_INTERVAL_HOURS;
-  el.lastSent.textContent = formatLastSent(data.lastSentAt);
-  updateDomainHint();
-  renderActiveTarget(data);
+  refreshing = true;
+  try {
+    const data = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+    el.captureUrl.value = data.captureUrl || TARGET_REQUEST_URL;
+    el.domainMode.value = data.domainMode || "subdominio";
+    el.webhookUrl.value = data.webhookUrl || "";
+    el.intervalHours.value =
+      data.intervalHours != null ? data.intervalHours : DEFAULT_INTERVAL_HOURS;
+    el.lastSent.textContent = formatLastSent(data.lastSentAt);
+    updateDomainHint();
+    renderActiveTarget(data);
+  } finally {
+    refreshing = false;
+  }
 }
 
 if (el.copyWebhookExample) {
   el.copyWebhookExample.addEventListener("click", async () => {
+    await persistDraft();
     try {
       await navigator.clipboard.writeText(WEBHOOK_EXAMPLE);
       setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
@@ -93,8 +134,17 @@ if (el.copyWebhookExample) {
   });
 }
 
+if (el.webhookExampleLink) {
+  el.webhookExampleLink.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    await persistDraft();
+    chrome.tabs.create({ url: WEBHOOK_EXAMPLE });
+  });
+}
+
 if (el.openFullOptions) {
-  el.openFullOptions.addEventListener("click", () => {
+  el.openFullOptions.addEventListener("click", async () => {
+    await persistDraft();
     chrome.runtime.openOptionsPage();
   });
 }
@@ -105,6 +155,7 @@ el.domainMode.addEventListener("change", () => {
     captureUrl: el.captureUrl.value,
     domainMode: el.domainMode.value,
   });
+  schedulePersistDraft();
 });
 
 el.captureUrl.addEventListener("input", () => {
@@ -112,7 +163,15 @@ el.captureUrl.addEventListener("input", () => {
     captureUrl: el.captureUrl.value,
     domainMode: el.domainMode.value,
   });
+  schedulePersistDraft();
 });
+
+el.webhookUrl.addEventListener("input", schedulePersistDraft);
+el.intervalHours.addEventListener("input", schedulePersistDraft);
+
+el.captureUrl.addEventListener("blur", () => persistDraft().catch(() => {}));
+el.webhookUrl.addEventListener("blur", () => persistDraft().catch(() => {}));
+el.intervalHours.addEventListener("blur", () => persistDraft().catch(() => {}));
 
 el.save.addEventListener("click", async () => {
   const captureRaw = el.captureUrl.value.trim();
@@ -166,6 +225,7 @@ el.save.addEventListener("click", async () => {
 });
 
 el.sendNow.addEventListener("click", async () => {
+  await persistDraft();
   setStatus("Enviando…");
   const captureRaw = el.captureUrl.value.trim() || TARGET_REQUEST_URL;
   const result = await chrome.runtime.sendMessage({
