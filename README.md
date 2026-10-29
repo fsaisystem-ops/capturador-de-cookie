@@ -34,7 +34,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 5. A extensão **Capturador de Cookie** aparece na lista (como abaixo).
 6. Clique com o **botão esquerdo** no ícone da extensão para abrir o painel de configuração (popup).
 
-![Chrome — Modo do desenvolvedor e Carregar sem compactação (Capturador de Cookie)](docs/images/chrome-carregar-extensao.png)
+![Chrome extensions: Developer mode and Load unpacked](docs/images/chrome-carregar-extensao.png)
 
 Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recarregar** na extensão (obrigatório se mudou `permissions` / `manifest`).
 
