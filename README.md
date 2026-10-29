@@ -16,7 +16,6 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 
 - [Instalação](#instalação)
 - [Configuração](#configuração)
-- [Telas](#telas)
 - [Quando dispara](#quando-dispara)
 - [Domínio principal vs subdomínio](#domínio-principal-vs-subdomínio)
 - [Payload do webhook](#payload-do-webhook)
@@ -48,16 +47,6 @@ Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recar
 6. **Enviar agora** — teste manual (ignora o throttle).
 
 Sem webhook ou sem URL de captura salvos, a extensão não envia.
-
-## Telas
-
-Página de **Opções** após um envio bem-sucedido:
-
-![Opções do Capturador de Cookie com status Enviado HTTP 200](docs/images/opcoes-enviado.png)
-
-Payload recebido no webhook (exemplo redactado — `www.example.com`):
-
-![JSON no webhook.site com cookieHeader e cookieNames](docs/images/webhook-site-payload.png)
 
 ## Quando dispara
 
