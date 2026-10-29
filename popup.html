@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Capturador de Cookie</title>
+  <style>
+    html, body { margin: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      width: 360px;
+      max-height: 580px;
+      overflow-y: auto;
+      padding: 0.75rem 0.9rem 1rem;
+      box-sizing: border-box;
+    }
+    label { display: block; margin-top: 0.75rem; font-weight: 600; font-size: 0.9rem; }
+    input, select { width: 100%; padding: 0.4rem 0.45rem; box-sizing: border-box; font-size: 0.9rem; }
+    .row { margin-top: 0.75rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    button { padding: 0.4rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
+    #status { margin-top: 0.6rem; min-height: 1.25em; font-size: 0.9rem; }
+    .muted { color: #555; font-size: 0.85rem; }
+    .hint { font-size: 0.8rem; color: #555; margin-top: 0.25rem; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem; }
+    .brand img { display: block; width: 40px; height: 40px; border-radius: 6px; background: #0a1628; }
+    .brand h1 { margin: 0; font-size: 1.05rem; }
+    .example-link { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.25rem; font-size: 0.8rem; }
+    .example-link a { color: #0b57d0; word-break: break-all; }
+    .example-link button { padding: 0.2rem 0.5rem; font-size: 0.8rem; cursor: pointer; }
+    .footer-link { margin-top: 0.75rem; }
+    .footer-link button { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <img src="icons/icon48.png" alt="FSAI SYSTEM" width="40" height="40" />
+    <h1>Capturador de Cookie</h1>
+  </div>
+  <p class="muted">Configure o alvo e o webhook. Clique esquerdo no ícone abre este painel.</p>
+
+  <label for="captureUrl">URL para capturar / monitorar</label>
+  <input id="captureUrl" type="url" placeholder="https://www.example.com/app" autocomplete="off" />
+  <p class="hint">Mesma URL do document request no Network.</p>
+
+  <label for="domainMode">Tipo de domínio</label>
+  <select id="domainMode">
+    <option value="subdominio">Subdomínio (www / app…)</option>
+    <option value="principal">Domínio principal (apex)</option>
+  </select>
+  <p class="hint" id="domainHint">Subdomínio: host exato da URL.</p>
+
+  <label for="webhookUrl">URL do webhook</label>
+  <input id="webhookUrl" type="url" placeholder="https://…" autocomplete="off" />
+  <div class="example-link">
+    <span class="muted">Testar:</span>
+    <a id="webhookExampleLink" href="https://webhook.site/" target="_blank" rel="noopener noreferrer">https://webhook.site/</a>
+    <button id="copyWebhookExample" type="button" title="Copiar link">Copiar</button>
+  </div>
+  <p class="hint">Abra, copie a URL única e cole acima.</p>
+
+  <label for="intervalHours">Intervalo (horas)</label>
+  <input id="intervalHours" type="number" min="1" step="1" />
+
+  <p class="muted">Último envio: <span id="lastSent">nunca</span></p>
+  <p class="muted">Alvo ativo: <span id="activeTarget">—</span></p>
+
+  <div class="row">
+    <button id="save" type="button">Salvar</button>
+    <button id="sendNow" type="button">Enviar agora</button>
+  </div>
+  <p id="status"></p>
+
+  <div class="footer-link">
+    <button id="openFullOptions" type="button">Abrir em página completa</button>
+  </div>
+
+  <script src="lib/capturador-cookie.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

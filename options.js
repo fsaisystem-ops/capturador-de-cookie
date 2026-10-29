@@ -21,6 +21,7 @@ const el = {
   save: document.getElementById("save"),
   sendNow: document.getElementById("sendNow"),
   copyWebhookExample: document.getElementById("copyWebhookExample"),
+  openFullOptions: document.getElementById("openFullOptions"),
 };
 
 function setStatus(text) {
@@ -71,25 +72,32 @@ async function refresh() {
   renderActiveTarget(data);
 }
 
-el.copyWebhookExample.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(WEBHOOK_EXAMPLE);
-    setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
-  } catch (_) {
-    // Fallback if clipboard API is blocked
-    const ta = document.createElement("textarea");
-    ta.value = WEBHOOK_EXAMPLE;
-    document.body.appendChild(ta);
-    ta.select();
+if (el.copyWebhookExample) {
+  el.copyWebhookExample.addEventListener("click", async () => {
     try {
-      document.execCommand("copy");
+      await navigator.clipboard.writeText(WEBHOOK_EXAMPLE);
       setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
-    } catch (e) {
-      setStatus("Não deu para copiar — selecione o link manualmente");
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = WEBHOOK_EXAMPLE;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        setStatus("Link copiado: " + WEBHOOK_EXAMPLE);
+      } catch (e) {
+        setStatus("Não deu para copiar — selecione o link manualmente");
+      }
+      ta.remove();
     }
-    ta.remove();
-  }
-});
+  });
+}
+
+if (el.openFullOptions) {
+  el.openFullOptions.addEventListener("click", () => {
+    chrome.runtime.openOptionsPage();
+  });
+}
 
 el.domainMode.addEventListener("change", () => {
   updateDomainHint();

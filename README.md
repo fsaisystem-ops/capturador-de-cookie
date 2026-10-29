@@ -9,7 +9,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.4.1 (ver `manifest.json`) |
+| **Versão** | 1.5.0 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice
@@ -32,9 +32,9 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 2. Abra `chrome://extensions`.
 3. Ative **Modo do desenvolvedor**.
 4. **Carregar sem compactação** → pasta do projeto (a que contém o `manifest.json`).
-5. Abra **Opções** da extensão **Capturador de Cookie**.
+5. Clique com o **botão esquerdo** no ícone da extensão para abrir o painel de configuração (popup).
 
-Depois de atualizar o código no disco: na mesma tela, clique **Recarregar** na extensão (obrigatório se mudou `permissions` / `manifest`).
+Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recarregar** na extensão (obrigatório se mudou `permissions` / `manifest`).
 
 ## Configuração
 
