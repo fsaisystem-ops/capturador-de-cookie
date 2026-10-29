@@ -94,20 +94,24 @@ Detalhe de implementação: ver [docs/ARQUITETURA.md](docs/ARQUITETURA.md#domín
 
 ## Payload do webhook
 
-`POST` com `Content-Type: application/json`. Exemplo de forma:
+`POST` com `Content-Type: application/json`. Exemplo (redactado — `www.example.com`):
+
+![Payload JSON no webhook.site com cookies, localStorage e sessionStorage](docs/images/webhook-payload-example.png)
 
 ```json
 {
   "source": "capturador-de-cookie",
   "host": "www.example.com",
+  "domainMode": "subdominio",
+  "cookieDomain": "example.com",
   "url": "https://www.example.com/app",
   "requestUrl": "https://www.example.com/app",
   "requestMethod": "GET",
-  "capturedAt": "2026-10-29T15:52:35.000Z",
-  "trigger": "network-capture",
-  "captureSource": "webRequest",
-  "cookieHeader": "session_id=…; auth_token=…; waf_token=…",
-  "cookieNames": ["session_id", "auth_token", "waf_token"],
+  "capturedAt": "2026-10-29T17:00:00.000Z",
+  "trigger": "send-now",
+  "captureSource": "cookies.getAll",
+  "cookieHeader": "session_id=…; auth_token=…",
+  "cookieNames": ["session_id", "auth_token"],
   "cookies": [
     {
       "name": "session_id",
@@ -119,9 +123,9 @@ Detalhe de implementação: ver [docs/ARQUITETURA.md](docs/ARQUITETURA.md#domín
       "expirationDate": null
     }
   ],
-  "localStorage": { "token": "…" },
+  "localStorage": {},
   "sessionStorage": { "uiFlag": "1" },
-  "localStorageKeys": ["token"],
+  "localStorageKeys": [],
   "sessionStorageKeys": ["uiFlag"],
   "pageUrl": "https://www.example.com/app",
   "storageSource": "tab"

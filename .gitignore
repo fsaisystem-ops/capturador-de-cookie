@@ -2,6 +2,8 @@ node_modules/
 .superpowers/
 package-lock.json
 docs/images/_shot.mjs
+docs/images/_shot-webhook.mjs
+docs/images/webhook-payload-source.png
 icons/make-icons.py
 icons/icon-master.jpg
 icons/logo-source.png
