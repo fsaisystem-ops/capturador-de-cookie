@@ -16,6 +16,7 @@ const {
   DEFAULT_INTERVAL_HOURS,
   DOMAIN_MODE_PRINCIPAL,
   DOMAIN_MODE_SUBDOMINIO,
+  isCompleteCookieHeader,
 } = require(path.join(__dirname, "..", "lib", "capturador-cookie.js"));
 
 assert.strictEqual(DEFAULT_INTERVAL_HOURS, 12);
@@ -53,6 +54,14 @@ assert.strictEqual(
   isCaptureUrl("https://www.example.com/login", sub),
   false,
   "never capture login page"
+);
+
+assert.strictEqual(isCompleteCookieHeader("a=1"), false);
+assert.strictEqual(
+  isCompleteCookieHeader(
+    "ASP.NET_SessionId=abc; AWSALB=x; aws-waf-token=y; -OP=u; a=1; b=2; c=3; d=4"
+  ),
+  true
 );
 const rootCfg = parseCaptureTarget("https://www.example.com/", "subdominio");
 assert.strictEqual(isCaptureUrl("https://www.example.com/", rootCfg), true);

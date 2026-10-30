@@ -30,6 +30,7 @@ const el = {
   copyWebhookExample: document.getElementById("copyWebhookExample"),
   openFullOptions: document.getElementById("openFullOptions"),
   webhookExampleLink: document.getElementById("webhookExampleLink"),
+  extVersion: document.getElementById("extVersion"),
 };
 
 let draftTimer = null;
@@ -143,6 +144,9 @@ async function refresh() {
       el.webhookHeaderValue.value = data.webhookHeaderValue || "";
     }
     el.lastSent.textContent = formatLastSent(data.lastSentAt);
+    if (el.extVersion) {
+      el.extVersion.textContent = data.extensionVersion || "?";
+    }
     updateDomainHint();
     updateAuthFields();
     renderActiveTarget(data);

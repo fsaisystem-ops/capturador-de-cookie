@@ -9,7 +9,7 @@ Uso típico: renovar sessão em automações (n8n, Make, API própria, webhook.s
 | | |
 |---|---|
 | **Repo** | https://github.com/fsaisystem-ops/capturador-de-cookie |
-| **Versão** | 1.7.0 (ver `manifest.json`) |
+| **Versão** | 1.8.0 (ver `manifest.json`) |
 | **Escopo** | Sessão **sua** / automação autorizada. Não é ferramenta para coletar sessão de terceiros. |
 
 ## Índice
@@ -66,18 +66,13 @@ Sem webhook ou sem URL de captura salvos, a extensão não envia.
 | Evento | Comportamento |
 |--------|----------------|
 | Document `GET` em `/app` | Captura o header `Cookie` via `webRequest` (igual ao Network) e agenda envio (`force`, debounce ~2,5s) |
-| Cookies do domínio mudam (ex.: login) | Agenda envio (`force`, debounce ~2,5s) |
-| Aba do host termina de carregar | Tenta envio; em `/app` usa `force`; em outras rotas respeita o intervalo |
-| Botão **Enviar agora** | Envio imediato (`force`) |
+| Botão **Enviar agora** | Abre a URL de captura e exige `Cookie` do Network (`webRequest`) |
+| Você abre a URL logada | Pode auto-enviar se já houver Cookie Network fresco (sem reload loop) |
 
-- Debounce de **~2,5s** junta vários `Set-Cookie` / navegação em um único POST.
+- **Não** dispara a partir de `/login`.
+- **Não** envia `captureSource: "cookies.getAll"` no fluxo válido — só `webRequest`.
+- `cookieHeader` tem que ser a linha completa do F12 (vários cookies, ex. `ASP.NET_SessionId`, `AWSALB`, `aws-waf-token`).
 - Só grava `lastSentAt` se o webhook responder **HTTP 2xx**.
-- Se o `cookieHeader` for **idêntico** ao último envio bem-sucedido (em disparos de login/network), o envio é pulado (anti-ruído).
-
-**Fonte do Cookie**
-
-1. Preferência: header real do request (`captureSource: "webRequest"`).
-2. Fallback: `chrome.cookies.getAll({ url: "https://www.example.com/app" })` (`captureSource: "cookies.getAll"`), incluindo HttpOnly.
 
 ## Domínio principal vs subdomínio
 

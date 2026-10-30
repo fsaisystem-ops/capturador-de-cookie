@@ -8,9 +8,12 @@ const {
   isTargetUrl,
   isCaptureUrl,
   isAuthOrLoginPath,
+  isCompleteCookieHeader,
   shouldSend,
   buildPayload,
 } = CapturadorCookie;
+
+const EXTENSION_VERSION = "1.8.0";
 
 const DEBOUNCE_MS = 2000;
 const CAPTURE_FRESH_MS = 10 * 60 * 1000;
@@ -82,8 +85,22 @@ function isFreshNetworkCapture(cap) {
   if (!cap || !cap.cookieHeader || !cap.url) return false;
   if (isAuthOrLoginPath(new URL(cap.url).pathname)) return false;
   if (!isCaptureUrl(cap.url, liveConfig)) return false;
+  if (!isCompleteCookieHeader(cap.cookieHeader)) return false;
   const age = Date.now() - (Number(cap.capturedAt) || 0);
   return age <= CAPTURE_FRESH_MS;
+}
+
+async function ensureCaptureHostPermission() {
+  const origin = liveConfig.originPattern;
+  if (!origin) return false;
+  try {
+    const have = await chrome.permissions.contains({ origins: [origin] });
+    if (have) return true;
+    return await chrome.permissions.request({ origins: [origin] });
+  } catch (e) {
+    console.warn("capturador-cookie permission:", e);
+    return false;
+  }
 }
 
 function onBeforeSendHeaders(details) {
@@ -94,6 +111,14 @@ function onBeforeSendHeaders(details) {
   const headers = details.requestHeaders || [];
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
   if (!cookieHdr || !cookieHdr.value) return;
+  if (!isCompleteCookieHeader(cookieHdr.value)) {
+    console.warn(
+      "capturador-cookie ignoring thin Cookie header",
+      cookieHdr.value.length,
+      details.url
+    );
+    return;
+  }
 
   const hadWaiters = pendingCookieWaiters.length > 0;
   rememberNetworkCapture({
@@ -370,15 +395,27 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     }
 
     if (isManual) {
+      const permitted = await ensureCaptureHostPermission();
+      if (!permitted) {
+        return {
+          ok: false,
+          error:
+            "Sem permissão do site de captura. Clique Salvar e aceite o host (ex.: obraprimaweb.com.br).",
+        };
+      }
+      // Re-bind listener after permission grant.
+      bindWebRequest();
       // MUST get Cookie line from real GET on capture URL (Network).
       capture = await captureCookieHeaderByNavigation();
       if (!isFreshNetworkCapture(capture)) {
         return {
           ok: false,
           error:
-            "Não peguei o Cookie do Network em " +
+            "Não peguei o Cookie completo do Network em " +
             captureConfigured +
-            ". Confirme que está LOGADA nessa URL (não /login), Salvar de novo (permissão do site) e Enviar agora.",
+            ". Fique LOGADA em /orcamentos (não /login), Salvar, Enviar agora. Extensão deve ser v" +
+            EXTENSION_VERSION +
+            ".",
         };
       }
     } else {
@@ -534,7 +571,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return;
     }
     if (msg && msg.type === "GET_STATUS") {
-      sendResponse(await getSettings());
+      const status = await getSettings();
+      status.extensionVersion = EXTENSION_VERSION;
+      sendResponse(status);
       return;
     }
     if (msg && msg.type === "CONFIG_UPDATED") {
