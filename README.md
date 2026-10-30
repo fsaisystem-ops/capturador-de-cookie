@@ -147,7 +147,7 @@ Detalhe de implementação: ver [docs/ARQUITETURA.md](docs/ARQUITETURA.md#domín
 
 Campos úteis no receptor (n8n etc.):
 
-- `cookieHeader` — string pronta para header `Cookie:` em requests HTTP.
+- `cookieHeader` — **linha `Cookie:` inteira** do GET na URL de captura (igual ao Network, ex. `/orcamentos` já logado). No **Enviar agora** a extensão navega/recarrega a URL pra capturar esse header completo via `webRequest`.
 - `cookieNames` — checklist rápido (ex.: confirmar `session_id`, `auth_token`, `waf_token`).
 - `localStorage` / `sessionStorage` — chave/valor da aba (precisa ter o site aberto).
 - `storageSource` — `tab` (ok), `none` (sem aba do alvo), `error`.
