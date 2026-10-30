@@ -8,20 +8,17 @@ const {
   isTargetUrl,
   isCaptureUrl,
   isAuthOrLoginPath,
-  cookieBelongsToTarget,
   shouldSend,
   buildPayload,
 } = CapturadorCookie;
 
-const DEBOUNCE_MS = 2500;
-const CAPTURE_FRESH_MS = 5 * 60 * 1000;
-const NAV_CAPTURE_TIMEOUT_MS = 20000;
-/** Min gap between automatic webhook sends (stops storm). */
+const DEBOUNCE_MS = 2000;
+const CAPTURE_FRESH_MS = 10 * 60 * 1000;
+const NAV_CAPTURE_TIMEOUT_MS = 25000;
 const AUTO_SEND_COOLDOWN_MS = 60 * 1000;
 
 let debounceTimer = null;
 let sending = false;
-/** True while we intentionally navigate to read Cookie header (Enviar agora only). */
 let navigatingForCapture = false;
 let lastAutoSendAt = 0;
 
@@ -49,13 +46,21 @@ async function loadCaptureConfig() {
       originPattern: parsed.originPattern,
     };
   }
-  if (data.lastNetworkCapture && data.lastNetworkCapture.cookieHeader) {
+  if (
+    data.lastNetworkCapture &&
+    data.lastNetworkCapture.cookieHeader &&
+    data.lastNetworkCapture.url &&
+    !isAuthOrLoginPath(new URL(data.lastNetworkCapture.url).pathname)
+  ) {
     lastNetworkCapture = data.lastNetworkCapture;
   }
   return liveConfig;
 }
 
 function rememberNetworkCapture(cap) {
+  if (!cap || !cap.cookieHeader || !cap.url) return;
+  if (isAuthOrLoginPath(new URL(cap.url).pathname)) return;
+
   lastNetworkCapture = {
     cookieHeader: cap.cookieHeader,
     url: cap.url,
@@ -73,38 +78,39 @@ function rememberNetworkCapture(cap) {
   }
 }
 
-function isFreshNetworkCapture(cap, forUrl) {
-  if (!cap || !cap.cookieHeader) return false;
+function isFreshNetworkCapture(cap) {
+  if (!cap || !cap.cookieHeader || !cap.url) return false;
+  if (isAuthOrLoginPath(new URL(cap.url).pathname)) return false;
+  if (!isCaptureUrl(cap.url, liveConfig)) return false;
   const age = Date.now() - (Number(cap.capturedAt) || 0);
-  if (age > CAPTURE_FRESH_MS) return false;
-  if (forUrl && !isCaptureUrl(cap.url || "", liveConfig)) return false;
-  if (cap.url && isAuthOrLoginPath(new URL(cap.url).pathname)) return false;
-  return true;
+  return age <= CAPTURE_FRESH_MS;
 }
 
 function onBeforeSendHeaders(details) {
   if (details.method !== "GET") return;
   if (!isCaptureUrl(details.url, liveConfig)) return;
+  if (isAuthOrLoginPath(new URL(details.url).pathname)) return;
+
   const headers = details.requestHeaders || [];
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
   if (!cookieHdr || !cookieHdr.value) return;
 
+  const hadWaiters = pendingCookieWaiters.length > 0;
   rememberNetworkCapture({
     cookieHeader: cookieHdr.value,
     url: details.url,
     method: details.method,
   });
   console.log(
-    "capturador-cookie captured Cookie length=",
+    "capturador-cookie Network Cookie OK",
     cookieHdr.value.length,
     details.url
   );
 
-  // NEVER auto-send from webRequest while we are navigating for capture,
-  // and do not reload the page from here — that caused the infinite loop.
-  if (navigatingForCapture || pendingCookieWaiters.length > 0) return;
+  // While Enviar agora is waiting, only fulfill waiters — no extra auto-send.
+  if (navigatingForCapture || hadWaiters) return;
 
-  // Passive observe only: optional auto-send with cooldown + throttle (no navigate).
+  // User opened the capture URL themselves → soft auto-send (no reload).
   scheduleSend("network-capture", false);
 }
 
@@ -168,91 +174,67 @@ async function readCookiesForCaptureUrl() {
   return Array.from(map.values());
 }
 
-/** Aba aberta no host/alvo. */
 async function findTabForCapture() {
   const tabs = await chrome.tabs.query({});
   const preferred = liveConfig.captureUrl || TARGET_REQUEST_URL;
-  let best = null;
   for (const tab of tabs) {
     if (!tab.id || !tab.url || !isTargetUrl(tab.url, liveConfig)) continue;
     if (isAuthOrLoginPath(new URL(tab.url).pathname)) continue;
     if (isCaptureUrl(tab.url, liveConfig)) return tab;
-    if (!best) best = tab;
   }
-  if (best) return best;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !isTargetUrl(tab.url, liveConfig)) continue;
+    if (isAuthOrLoginPath(new URL(tab.url).pathname)) continue;
+    return tab;
+  }
   const exact = tabs.find(
-    (t) => t.url && t.url.startsWith(preferred.split("?")[0])
+    (t) => t.url && t.url.startsWith(String(preferred).split("?")[0])
   );
   return exact || null;
 }
 
 /**
- * Only used by Enviar agora. Navigates once, waits for Cookie header, stops.
+ * Enviar agora only: one navigation to capture URL, wait for real Cookie header.
  */
-async function ensureNetworkCookieHeader({ forceNavigate }) {
-  if (!forceNavigate && isFreshNetworkCapture(lastNetworkCapture, true)) {
+async function captureCookieHeaderByNavigation() {
+  if (isFreshNetworkCapture(lastNetworkCapture)) {
     return lastNetworkCapture;
-  }
-  if (!forceNavigate) {
-    return isFreshNetworkCapture(lastNetworkCapture, false)
-      ? lastNetworkCapture
-      : null;
-  }
-
-  if (navigatingForCapture) {
-    // Already navigating — just wait.
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pendingCookieWaiters = pendingCookieWaiters.filter((w) => w !== wrap);
-        resolve(lastNetworkCapture);
-      }, NAV_CAPTURE_TIMEOUT_MS);
-      function wrap(cap) {
-        clearTimeout(timer);
-        resolve(cap);
-      }
-      pendingCookieWaiters.push(wrap);
-    });
   }
 
   const captureUrl = liveConfig.captureUrl || TARGET_REQUEST_URL;
+  if (isAuthOrLoginPath(new URL(captureUrl).pathname)) {
+    return null;
+  }
+
   navigatingForCapture = true;
 
   const waitPromise = new Promise((resolve) => {
     const timer = setTimeout(() => {
-      pendingCookieWaiters = pendingCookieWaiters.filter((w) => w !== resolveWrapped);
+      pendingCookieWaiters = pendingCookieWaiters.filter((w) => w !== wrap);
       resolve(null);
     }, NAV_CAPTURE_TIMEOUT_MS);
-
-    function resolveWrapped(cap) {
+    function wrap(cap) {
       clearTimeout(timer);
       resolve(cap);
     }
-    pendingCookieWaiters.push(resolveWrapped);
+    pendingCookieWaiters.push(wrap);
   });
 
   try {
     let tab = await findTabForCapture();
     if (tab && tab.id) {
-      const same =
-        tab.url &&
-        tab.url.split("?")[0].replace(/\/$/, "") ===
-          captureUrl.split("?")[0].replace(/\/$/, "");
-      if (same) {
-        await chrome.tabs.reload(tab.id);
-      } else {
-        await chrome.tabs.update(tab.id, { url: captureUrl, active: false });
-      }
+      await chrome.tabs.update(tab.id, { url: captureUrl, active: true });
     } else {
-      await chrome.tabs.create({ url: captureUrl, active: false });
+      await chrome.tabs.create({ url: captureUrl, active: true });
     }
   } catch (e) {
-    console.warn("capturador-cookie navigate for Cookie header:", e);
+    console.warn("capturador-cookie navigate:", e);
   }
 
   try {
     const cap = await waitPromise;
-    if (cap && cap.cookieHeader) return cap;
-    if (isFreshNetworkCapture(lastNetworkCapture, false)) return lastNetworkCapture;
+    if (isFreshNetworkCapture(cap)) return cap;
+    if (isFreshNetworkCapture(lastNetworkCapture)) return lastNetworkCapture;
     return null;
   } finally {
     navigatingForCapture = false;
@@ -279,7 +261,7 @@ function dumpWebStorageInPage() {
   };
 }
 
-async function readWebStorageFromTab() {
+async function readWebStorageFromTab(preferredUrl) {
   const empty = {
     localStorage: {},
     sessionStorage: {},
@@ -287,8 +269,26 @@ async function readWebStorageFromTab() {
     storageSource: "none",
   };
   try {
-    const tab = await findTabForCapture();
+    let tab = null;
+    if (preferredUrl) {
+      const tabs = await chrome.tabs.query({});
+      tab = tabs.find((t) => t.id && t.url && t.url.split("#")[0] === preferredUrl.split("#")[0]) || null;
+      if (!tab) {
+        tab =
+          tabs.find(
+            (t) =>
+              t.id &&
+              t.url &&
+              isCaptureUrl(t.url, liveConfig) &&
+              !isAuthOrLoginPath(new URL(t.url).pathname)
+          ) || null;
+      }
+    }
+    if (!tab) tab = await findTabForCapture();
     if (!tab || !tab.id) return empty;
+    if (tab.url && isAuthOrLoginPath(new URL(tab.url).pathname)) {
+      return { ...empty, storageSource: "skipped-login-page", pageUrl: tab.url };
+    }
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: dumpWebStorageInPage,
@@ -340,121 +340,95 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
   try {
     const settings = await getSettings();
     const webhookUrl = (settings.webhookUrl || "").trim();
-    if (!webhookUrl) {
-      return { ok: false, error: "Webhook não configurado" };
-    }
+    if (!webhookUrl) return { ok: false, error: "Webhook não configurado" };
     if (!(settings.captureUrl || "").trim()) {
       return { ok: false, error: "URL de captura não configurada" };
+    }
+
+    const captureConfigured = liveConfig.captureUrl || settings.captureUrl;
+    if (isAuthOrLoginPath(new URL(captureConfigured).pathname)) {
+      return {
+        ok: false,
+        error:
+          "URL de captura não pode ser /login. Use a página logada (ex.: /orcamentos).",
+      };
     }
 
     const now = Date.now();
     const isManual = reason === "send-now";
 
     if (!isManual && now - lastAutoSendAt < AUTO_SEND_COOLDOWN_MS) {
-      return { ok: false, error: "Cooldown-send cooldown", throttled: true };
+      return { ok: false, error: "Auto-send cooldown", throttled: true };
     }
-
     if (!force && !shouldSend(now, settings.lastSentAt, settings.intervalHours)) {
       return { ok: false, error: "Throttle ativo", throttled: true };
     }
 
     let capture = networkCapture || null;
-    if (capture && capture.url && isAuthOrLoginPath(new URL(capture.url).pathname)) {
+    if (capture && (!capture.url || isAuthOrLoginPath(new URL(capture.url).pathname))) {
       capture = null;
     }
 
-    // ONLY manual Enviar agora may navigate/reload the page.
     if (isManual) {
-      const ensured = await ensureNetworkCookieHeader({
-        forceNavigate: !isFreshNetworkCapture(capture || lastNetworkCapture, true),
-      });
-      if (ensured && ensured.cookieHeader) {
-        if (ensured.url && isAuthOrLoginPath(new URL(ensured.url).pathname)) {
-          return {
-            ok: false,
-            error:
-              "Ainda na tela de login. Faça login e use a URL de captura (ex.: /orcamentos).",
-          };
-        }
-        capture = ensured;
-      } else if (!capture) {
-        capture = lastNetworkCapture;
-      }
-    } else {
-      // Auto paths: use whatever Network already saw — never navigate.
-      if (!capture) capture = lastNetworkCapture;
-      if (!isFreshNetworkCapture(capture, true)) {
+      // MUST get Cookie line from real GET on capture URL (Network).
+      capture = await captureCookieHeaderByNavigation();
+      if (!isFreshNetworkCapture(capture)) {
         return {
           ok: false,
-          error: "Sem Cookie fresco do Network (auto sem reload)",
+          error:
+            "Não peguei o Cookie do Network em " +
+            captureConfigured +
+            ". Confirme que está LOGADA nessa URL (não /login), Salvar de novo (permissão do site) e Enviar agora.",
+        };
+      }
+    } else {
+      if (!capture) capture = lastNetworkCapture;
+      if (!isFreshNetworkCapture(capture)) {
+        return {
+          ok: false,
+          error: "Sem Cookie Network fresco — abra a URL de captura logada",
           skipped: true,
         };
       }
     }
 
-    if (
-      isManual &&
-      !(
-        capture &&
-        capture.cookieHeader &&
-        capture.url &&
-        isCaptureUrl(capture.url, liveConfig)
-      )
-    ) {
+    // Absolute rule: never ship a login-page capture.
+    if (!capture.url || isAuthOrLoginPath(new URL(capture.url).pathname)) {
+      return { ok: false, error: "Captura em /login bloqueada" };
+    }
+    if (!isCaptureUrl(capture.url, liveConfig)) {
       return {
         ok: false,
-        error:
-          "cookieHeader incompleto. Configure /orcamentos (não /login), logue e Enviar agora.",
+        error: "Cookie não é da URL de captura configurada: " + capture.url,
       };
+    }
+    if (!capture.cookieHeader) {
+      return { ok: false, error: "cookieHeader vazio" };
     }
 
     const jar = await readCookiesForCaptureUrl();
-    const jarHeader = jar.map((c) => `${c.name}=${c.value}`).join("; ");
-    const cookieHeader =
-      capture && capture.cookieHeader ? capture.cookieHeader : jarHeader;
+    const webStorage = await readWebStorageFromTab(capture.url);
 
-    if (!cookieHeader) {
-      return {
-        ok: false,
-        error:
-          "Nenhum cookieHeader. Logue e abra a URL de captura (ex.: /orcamentos).",
-      };
-    }
+    const payload = buildPayload({
+      url: capture.url,
+      cookies: jar,
+      cookieHeader: capture.cookieHeader,
+      capturedAt: new Date().toISOString(),
+      request: { url: capture.url, method: capture.method || "GET" },
+      config: liveConfig,
+      webStorage,
+    });
+    payload.trigger = reason || "auto";
+    payload.captureSource = "webRequest";
+    payload.cookieHeader = capture.cookieHeader;
 
     if (
       !isManual &&
       settings.lastCookieHeader &&
-      cookieHeader === settings.lastCookieHeader
+      payload.cookieHeader === settings.lastCookieHeader
     ) {
       return { ok: false, error: "Cookies iguais ao último envio", skipped: true };
     }
-
-    const webStorage = await readWebStorageFromTab();
-    if (
-      webStorage.pageUrl &&
-      isAuthOrLoginPath(new URL(webStorage.pageUrl).pathname)
-    ) {
-      webStorage.localStorage = {};
-      webStorage.sessionStorage = {};
-      webStorage.storageSource = "skipped-login-page";
-    }
-
-    const payload = buildPayload({
-      url: (capture && capture.url) || tabUrl || liveConfig.captureUrl,
-      cookies: jar,
-      cookieHeader,
-      capturedAt: new Date().toISOString(),
-      request: {
-        url: (capture && capture.url) || liveConfig.captureUrl,
-        method: (capture && capture.method) || "GET",
-      },
-      config: liveConfig,
-      webStorage,
-    });
-    payload.trigger = reason || (force ? "force" : "auto");
-    payload.captureSource =
-      capture && capture.cookieHeader ? "webRequest" : "cookies.getAll";
-    payload.cookieHeader = cookieHeader;
 
     let res;
     try {
@@ -473,10 +447,10 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
         ok: true,
         status: res.status,
         cookieCount: payload.cookieNames.length,
-        captureSource: payload.captureSource,
+        captureSource: "webRequest",
         storageSource: payload.storageSource,
-        localStorageKeys: (payload.localStorageKeys || []).length,
-        sessionStorageKeys: (payload.sessionStorageKeys || []).length,
+        requestUrl: capture.url,
+        cookieHeaderLength: payload.cookieHeader.length,
       };
     }
     return { ok: false, error: `HTTP ${res.status}`, status: res.status };
@@ -505,9 +479,9 @@ function scheduleSend(reason, force) {
           "capturador-cookie send ok:",
           reason,
           result.status,
-          "cookies=",
-          result.cookieCount,
-          result.captureSource
+          result.requestUrl,
+          "cookieHeaderLen=",
+          result.cookieHeaderLength
         );
       }
     } catch (e) {
@@ -516,26 +490,8 @@ function scheduleSend(reason, force) {
   }, DEBOUNCE_MS);
 }
 
-// Cookie changes: do NOT navigate. Only queue a soft auto-send (cooldown + throttle).
-chrome.cookies.onChanged.addListener(async (changeInfo) => {
-  if (changeInfo.removed) return;
-  if (navigatingForCapture) return;
-  if (!cookieBelongsToTarget(changeInfo.cookie, liveConfig)) return;
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const activeUrl = tabs[0] && tabs[0].url;
-    if (activeUrl) {
-      const path = new URL(activeUrl).pathname;
-      if (isAuthOrLoginPath(path)) return;
-      if (!isCaptureUrl(activeUrl, liveConfig)) return;
-    }
-  } catch (_) {
-    return;
-  }
-  scheduleSend("login", false);
-});
+// REMOVED cookies.onChanged auto-send — that was firing on /login with garbage.
 
-// Tab complete: never force, never navigate — respects intervalHours.
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (navigatingForCapture) return;
   if (changeInfo.status !== "complete") return;
@@ -543,18 +499,17 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (!url || !isTargetUrl(url, liveConfig)) return;
   if (isAuthOrLoginPath(new URL(url).pathname)) return;
   if (!isCaptureUrl(url, liveConfig)) return;
+  // Soft auto: only if we already saw Network Cookie for this navigation.
+  if (!isFreshNetworkCapture(lastNetworkCapture)) return;
   try {
-    const result = await sendCookies({
+    await sendCookies({
       tabUrl: url,
       force: false,
       reason: "tab-capture",
       networkCapture: lastNetworkCapture,
     });
-    if (!result.ok && !result.throttled && !result.busy && !result.skipped) {
-      console.warn("capturador-cookie auto-send:", result.error);
-    }
   } catch (e) {
-    console.warn("capturador-cookie auto-send exception:", e);
+    console.warn("capturador-cookie auto-send:", e);
   }
 });
 

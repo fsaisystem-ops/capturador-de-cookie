@@ -307,18 +307,16 @@ el.sendNow.addEventListener("click", async () => {
   });
   await refresh();
   if (result && result.ok) {
-    const ls = result.localStorageKeys != null ? result.localStorageKeys : "?";
-    const ss = result.sessionStorageKeys != null ? result.sessionStorageKeys : "?";
-    const stor = result.storageSource || "?";
     setStatus(
       "Enviado (HTTP " +
         result.status +
-        ") · storage=" +
-        stor +
-        " · local=" +
-        ls +
-        " · session=" +
-        ss
+        ") · " +
+        (result.captureSource || "") +
+        " · " +
+        (result.requestUrl || "") +
+        " · cookieHeader=" +
+        (result.cookieHeaderLength || "?") +
+        " chars"
     );
   } else {
     setStatus((result && result.error) || "Falha no envio");
