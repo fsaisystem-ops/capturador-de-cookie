@@ -49,6 +49,18 @@ assert.strictEqual(isTargetUrl("https://www.example.com/app", sub), true);
 assert.strictEqual(isTargetUrl("https://evil.com/", sub), false);
 assert.strictEqual(isCaptureUrl("https://www.example.com/app", sub), true);
 assert.strictEqual(isCaptureUrl("https://www.example.com/home", sub), false);
+assert.strictEqual(
+  isCaptureUrl("https://www.example.com/login", sub),
+  false,
+  "never capture login page"
+);
+const rootCfg = parseCaptureTarget("https://www.example.com/", "subdominio");
+assert.strictEqual(isCaptureUrl("https://www.example.com/", rootCfg), true);
+assert.strictEqual(
+  isCaptureUrl("https://www.example.com/orcamentos", rootCfg),
+  false,
+  "root / must not match every path"
+);
 
 assert.strictEqual(
   isTargetUrl("https://www.example.com/x", apex),

@@ -46,7 +46,7 @@ Depois de atualizar o código no disco: em `chrome://extensions`, clique **Recar
 
 ## Configuração
 
-1. **URL para capturar / monitorar** — ex.: `https://www.example.com/app` (a mesma do Network).
+1. **URL para capturar / monitorar** — use a página **já logada** (ex.: `…/orcamentos` / `…/app`). **Não** use `/login`. `/` sozinho não cobre outras rotas.
 2. **Tipo de domínio**
    - **Subdomínio** — monitora o host exato da URL (`www.example.com`).
    - **Domínio principal** — trata o registrável (`example.com`) e hosts sob ele (ver [Domínio principal vs subdomínio](#domínio-principal-vs-subdomínio)).

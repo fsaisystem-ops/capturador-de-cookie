@@ -7,6 +7,7 @@ const {
   parseCaptureTarget,
   isTargetUrl,
   isCaptureUrl,
+  isAuthOrLoginPath,
   cookieBelongsToTarget,
   shouldSend,
   buildPayload,
@@ -312,24 +313,64 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       return { ok: false, error: "Throttle ativo", throttled: true };
     }
 
-    // Always try to get the full Cookie line from a real GET (like DevTools Network).
+    // Always prefer the full Cookie line from a real GET on the capture URL
+    // (e.g. /orcamentos already logged in) — never trust /login as success.
     let capture = networkCapture || null;
-    const needFresh =
+    if (capture && capture.url && isAuthOrLoginPath(new URL(capture.url).pathname)) {
+      capture = null;
+    }
+    if (
+      lastNetworkCapture &&
+      lastNetworkCapture.url &&
+      isAuthOrLoginPath(new URL(lastNetworkCapture.url).pathname)
+    ) {
+      lastNetworkCapture = null;
+    }
+
+    const mustHaveNetworkHeader =
       reason === "send-now" ||
+      reason === "login" ||
       reason === "network-capture" ||
+      reason === "tab-capture";
+
+    const needFresh =
+      mustHaveNetworkHeader ||
       !isFreshNetworkCapture(capture || lastNetworkCapture, true);
 
     if (needFresh || !(capture && capture.cookieHeader)) {
       const ensured = await ensureNetworkCookieHeader({
-        forceNavigate: reason === "send-now" || !isFreshNetworkCapture(lastNetworkCapture, true),
+        forceNavigate: true,
       });
-      if (ensured && ensured.cookieHeader) capture = ensured;
-      else if (!capture) capture = lastNetworkCapture;
+      if (ensured && ensured.cookieHeader) {
+        if (
+          ensured.url &&
+          isAuthOrLoginPath(new URL(ensured.url).pathname)
+        ) {
+          return {
+            ok: false,
+            error:
+              "Ainda na tela de login. Faça login e use a URL de captura (ex.: /orcamentos).",
+          };
+        }
+        capture = ensured;
+      } else if (!capture) {
+        capture = lastNetworkCapture;
+      }
+    }
+
+    if (
+      mustHaveNetworkHeader &&
+      !(capture && capture.cookieHeader && capture.url && isCaptureUrl(capture.url, liveConfig))
+    ) {
+      return {
+        ok: false,
+        error:
+          "cookieHeader incompleto (sem GET na URL de captura). Configure /orcamentos (não /login), logue e Enviar agora.",
+      };
     }
 
     const jar = await readCookiesForCaptureUrl();
     const jarHeader = jar.map((c) => `${c.name}=${c.value}`).join("; ");
-    // Prefer Network Cookie header (complete request line). Fallback: jar merge.
     const cookieHeader =
       capture && capture.cookieHeader ? capture.cookieHeader : jarHeader;
 
@@ -337,11 +378,22 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       return {
         ok: false,
         error:
-          "Nenhum cookieHeader. Abra/logue na URL de captura (ex.: /orcamentos) e tente de novo.",
+          "Nenhum cookieHeader. Logue e abra a URL de captura (ex.: /orcamentos).",
       };
     }
 
     const webStorage = await readWebStorageFromTab();
+    // Don't report storage from the login page as if it were the app session.
+    if (
+      webStorage.pageUrl &&
+      isAuthOrLoginPath(new URL(webStorage.pageUrl).pathname)
+    ) {
+      webStorage.localStorage = {};
+      webStorage.sessionStorage = {};
+      webStorage.localStorageKeys = [];
+      webStorage.sessionStorageKeys = [];
+      webStorage.storageSource = "skipped-login-page";
+    }
 
     const payload = buildPayload({
       url: (capture && capture.url) || tabUrl || liveConfig.captureUrl,
@@ -358,7 +410,6 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     payload.trigger = reason || (force ? "force" : "auto");
     payload.captureSource =
       capture && capture.cookieHeader ? "webRequest" : "cookies.getAll";
-    // Explicit alias for consumers that expect this key shape.
     payload.cookieHeader = cookieHeader;
 
     if (
@@ -427,9 +478,20 @@ function scheduleSend(reason, force) {
   }, DEBOUNCE_MS);
 }
 
-chrome.cookies.onChanged.addListener((changeInfo) => {
+chrome.cookies.onChanged.addListener(async (changeInfo) => {
   if (changeInfo.removed) return;
   if (!cookieBelongsToTarget(changeInfo.cookie, liveConfig)) return;
+  // Ignore cookie noise while the user is still on /login — wait for app URL.
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeUrl = tabs[0] && tabs[0].url;
+    if (activeUrl) {
+      const path = new URL(activeUrl).pathname;
+      if (isAuthOrLoginPath(path)) return;
+    }
+  } catch (_) {
+    /* ignore */
+  }
   scheduleSend("login", true);
 });
 
