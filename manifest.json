@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Capturador de Cookie",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "Captura Cookie + storage e envia para webhook com auth Bearer ou header custom.",
   "permissions": ["cookies", "storage", "tabs", "webRequest", "scripting"],
   "host_permissions": ["https://www.example.com/*"],

@@ -14,15 +14,19 @@ const {
 } = CapturadorCookie;
 
 const DEBOUNCE_MS = 2500;
-/** How long a captured Cookie header from Network stays "fresh". */
 const CAPTURE_FRESH_MS = 5 * 60 * 1000;
 const NAV_CAPTURE_TIMEOUT_MS = 20000;
+/** Min gap between automatic webhook sends (stops storm). */
+const AUTO_SEND_COOLDOWN_MS = 60 * 1000;
 
 let debounceTimer = null;
 let sending = false;
+/** True while we intentionally navigate to read Cookie header (Enviar agora only). */
+let navigatingForCapture = false;
+let lastAutoSendAt = 0;
+
 /** @type {{ cookieHeader: string, url: string, method: string, capturedAt: number } | null} */
 let lastNetworkCapture = null;
-/** Resolvers waiting for the next real Cookie header from Network. */
 let pendingCookieWaiters = [];
 /** @type {ReturnType<typeof defaultCaptureConfig>} */
 let liveConfig = defaultCaptureConfig();
@@ -74,6 +78,7 @@ function isFreshNetworkCapture(cap, forUrl) {
   const age = Date.now() - (Number(cap.capturedAt) || 0);
   if (age > CAPTURE_FRESH_MS) return false;
   if (forUrl && !isCaptureUrl(cap.url || "", liveConfig)) return false;
+  if (cap.url && isAuthOrLoginPath(new URL(cap.url).pathname)) return false;
   return true;
 }
 
@@ -84,7 +89,6 @@ function onBeforeSendHeaders(details) {
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
   if (!cookieHdr || !cookieHdr.value) return;
 
-  const hadWaiters = pendingCookieWaiters.length > 0;
   rememberNetworkCapture({
     cookieHeader: cookieHdr.value,
     url: details.url,
@@ -95,10 +99,13 @@ function onBeforeSendHeaders(details) {
     cookieHdr.value.length,
     details.url
   );
-  // If Enviar agora is waiting for this header, don't auto-schedule a second send.
-  if (!hadWaiters) {
-    scheduleSend("network-capture", true);
-  }
+
+  // NEVER auto-send from webRequest while we are navigating for capture,
+  // and do not reload the page from here — that caused the infinite loop.
+  if (navigatingForCapture || pendingCookieWaiters.length > 0) return;
+
+  // Passive observe only: optional auto-send with cooldown + throttle (no navigate).
+  scheduleSend("network-capture", false);
 }
 
 function bindWebRequest() {
@@ -147,7 +154,6 @@ async function getSettings() {
 async function readCookiesForCaptureUrl() {
   const url = liveConfig.captureUrl || TARGET_REQUEST_URL;
   const byUrl = await chrome.cookies.getAll({ url });
-  // Merge domain jar so Path=/ cookies are not missed when URL filter is picky.
   let byDomain = [];
   try {
     if (liveConfig.cookieDomain) {
@@ -162,16 +168,54 @@ async function readCookiesForCaptureUrl() {
   return Array.from(map.values());
 }
 
+/** Aba aberta no host/alvo. */
+async function findTabForCapture() {
+  const tabs = await chrome.tabs.query({});
+  const preferred = liveConfig.captureUrl || TARGET_REQUEST_URL;
+  let best = null;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !isTargetUrl(tab.url, liveConfig)) continue;
+    if (isAuthOrLoginPath(new URL(tab.url).pathname)) continue;
+    if (isCaptureUrl(tab.url, liveConfig)) return tab;
+    if (!best) best = tab;
+  }
+  if (best) return best;
+  const exact = tabs.find(
+    (t) => t.url && t.url.startsWith(preferred.split("?")[0])
+  );
+  return exact || null;
+}
+
 /**
- * Prefer the real Cookie header from a logged-in GET (Network).
- * If missing/stale, navigate the capture URL and wait for webRequest.
+ * Only used by Enviar agora. Navigates once, waits for Cookie header, stops.
  */
 async function ensureNetworkCookieHeader({ forceNavigate }) {
   if (!forceNavigate && isFreshNetworkCapture(lastNetworkCapture, true)) {
     return lastNetworkCapture;
   }
+  if (!forceNavigate) {
+    return isFreshNetworkCapture(lastNetworkCapture, false)
+      ? lastNetworkCapture
+      : null;
+  }
+
+  if (navigatingForCapture) {
+    // Already navigating — just wait.
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingCookieWaiters = pendingCookieWaiters.filter((w) => w !== wrap);
+        resolve(lastNetworkCapture);
+      }, NAV_CAPTURE_TIMEOUT_MS);
+      function wrap(cap) {
+        clearTimeout(timer);
+        resolve(cap);
+      }
+      pendingCookieWaiters.push(wrap);
+    });
+  }
 
   const captureUrl = liveConfig.captureUrl || TARGET_REQUEST_URL;
+  navigatingForCapture = true;
 
   const waitPromise = new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -189,8 +233,15 @@ async function ensureNetworkCookieHeader({ forceNavigate }) {
   try {
     let tab = await findTabForCapture();
     if (tab && tab.id) {
-      // Reload/navigate so Network fires Cookie on the capture URL.
-      await chrome.tabs.update(tab.id, { url: captureUrl, active: false });
+      const same =
+        tab.url &&
+        tab.url.split("?")[0].replace(/\/$/, "") ===
+          captureUrl.split("?")[0].replace(/\/$/, "");
+      if (same) {
+        await chrome.tabs.reload(tab.id);
+      } else {
+        await chrome.tabs.update(tab.id, { url: captureUrl, active: false });
+      }
     } else {
       await chrome.tabs.create({ url: captureUrl, active: false });
     }
@@ -198,26 +249,14 @@ async function ensureNetworkCookieHeader({ forceNavigate }) {
     console.warn("capturador-cookie navigate for Cookie header:", e);
   }
 
-  const cap = await waitPromise;
-  if (cap && cap.cookieHeader) return cap;
-  if (isFreshNetworkCapture(lastNetworkCapture, false)) return lastNetworkCapture;
-  return null;
-}
-
-/** Aba aberta no host/alvo — precisa existir pra ler local/sessionStorage. */
-async function findTabForCapture() {
-  const tabs = await chrome.tabs.query({});
-  const preferred = liveConfig.captureUrl || TARGET_REQUEST_URL;
-  let best = null;
-  for (const tab of tabs) {
-    if (!tab.id || !tab.url || !isTargetUrl(tab.url, liveConfig)) continue;
-    if (isCaptureUrl(tab.url, liveConfig)) return tab;
-    if (!best) best = tab;
+  try {
+    const cap = await waitPromise;
+    if (cap && cap.cookieHeader) return cap;
+    if (isFreshNetworkCapture(lastNetworkCapture, false)) return lastNetworkCapture;
+    return null;
+  } finally {
+    navigatingForCapture = false;
   }
-  if (best) return best;
-  // fallback: URL configurada exata
-  const exact = tabs.find((t) => t.url && t.url.startsWith(preferred.split("?")[0]));
-  return exact || null;
 }
 
 function dumpWebStorageInPage() {
@@ -309,43 +348,28 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     }
 
     const now = Date.now();
+    const isManual = reason === "send-now";
+
+    if (!isManual && now - lastAutoSendAt < AUTO_SEND_COOLDOWN_MS) {
+      return { ok: false, error: "Cooldown-send cooldown", throttled: true };
+    }
+
     if (!force && !shouldSend(now, settings.lastSentAt, settings.intervalHours)) {
       return { ok: false, error: "Throttle ativo", throttled: true };
     }
 
-    // Always prefer the full Cookie line from a real GET on the capture URL
-    // (e.g. /orcamentos already logged in) — never trust /login as success.
     let capture = networkCapture || null;
     if (capture && capture.url && isAuthOrLoginPath(new URL(capture.url).pathname)) {
       capture = null;
     }
-    if (
-      lastNetworkCapture &&
-      lastNetworkCapture.url &&
-      isAuthOrLoginPath(new URL(lastNetworkCapture.url).pathname)
-    ) {
-      lastNetworkCapture = null;
-    }
 
-    const mustHaveNetworkHeader =
-      reason === "send-now" ||
-      reason === "login" ||
-      reason === "network-capture" ||
-      reason === "tab-capture";
-
-    const needFresh =
-      mustHaveNetworkHeader ||
-      !isFreshNetworkCapture(capture || lastNetworkCapture, true);
-
-    if (needFresh || !(capture && capture.cookieHeader)) {
+    // ONLY manual Enviar agora may navigate/reload the page.
+    if (isManual) {
       const ensured = await ensureNetworkCookieHeader({
-        forceNavigate: true,
+        forceNavigate: !isFreshNetworkCapture(capture || lastNetworkCapture, true),
       });
       if (ensured && ensured.cookieHeader) {
-        if (
-          ensured.url &&
-          isAuthOrLoginPath(new URL(ensured.url).pathname)
-        ) {
+        if (ensured.url && isAuthOrLoginPath(new URL(ensured.url).pathname)) {
           return {
             ok: false,
             error:
@@ -356,16 +380,31 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       } else if (!capture) {
         capture = lastNetworkCapture;
       }
+    } else {
+      // Auto paths: use whatever Network already saw — never navigate.
+      if (!capture) capture = lastNetworkCapture;
+      if (!isFreshNetworkCapture(capture, true)) {
+        return {
+          ok: false,
+          error: "Sem Cookie fresco do Network (auto sem reload)",
+          skipped: true,
+        };
+      }
     }
 
     if (
-      mustHaveNetworkHeader &&
-      !(capture && capture.cookieHeader && capture.url && isCaptureUrl(capture.url, liveConfig))
+      isManual &&
+      !(
+        capture &&
+        capture.cookieHeader &&
+        capture.url &&
+        isCaptureUrl(capture.url, liveConfig)
+      )
     ) {
       return {
         ok: false,
         error:
-          "cookieHeader incompleto (sem GET na URL de captura). Configure /orcamentos (não /login), logue e Enviar agora.",
+          "cookieHeader incompleto. Configure /orcamentos (não /login), logue e Enviar agora.",
       };
     }
 
@@ -382,16 +421,21 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       };
     }
 
+    if (
+      !isManual &&
+      settings.lastCookieHeader &&
+      cookieHeader === settings.lastCookieHeader
+    ) {
+      return { ok: false, error: "Cookies iguais ao último envio", skipped: true };
+    }
+
     const webStorage = await readWebStorageFromTab();
-    // Don't report storage from the login page as if it were the app session.
     if (
       webStorage.pageUrl &&
       isAuthOrLoginPath(new URL(webStorage.pageUrl).pathname)
     ) {
       webStorage.localStorage = {};
       webStorage.sessionStorage = {};
-      webStorage.localStorageKeys = [];
-      webStorage.sessionStorageKeys = [];
       webStorage.storageSource = "skipped-login-page";
     }
 
@@ -412,15 +456,6 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       capture && capture.cookieHeader ? "webRequest" : "cookies.getAll";
     payload.cookieHeader = cookieHeader;
 
-    if (
-      force &&
-      (reason === "login" || reason === "network-capture") &&
-      settings.lastCookieHeader &&
-      payload.cookieHeader === settings.lastCookieHeader
-    ) {
-      return { ok: false, error: "Cookies iguais ao último envio", skipped: true };
-    }
-
     let res;
     try {
       res = await postWebhook(webhookUrl, payload, settings);
@@ -429,6 +464,7 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
     }
 
     if (res.status >= 200 && res.status < 300) {
+      if (!isManual) lastAutoSendAt = Date.now();
       await chrome.storage.local.set({
         lastSentAt: Date.now(),
         lastCookieHeader: payload.cookieHeader,
@@ -450,9 +486,11 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
 }
 
 function scheduleSend(reason, force) {
+  if (navigatingForCapture) return;
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(async () => {
     debounceTimer = null;
+    if (navigatingForCapture) return;
     try {
       const result = await sendCookies({
         tabUrl: liveConfig.captureUrl,
@@ -478,33 +516,38 @@ function scheduleSend(reason, force) {
   }, DEBOUNCE_MS);
 }
 
+// Cookie changes: do NOT navigate. Only queue a soft auto-send (cooldown + throttle).
 chrome.cookies.onChanged.addListener(async (changeInfo) => {
   if (changeInfo.removed) return;
+  if (navigatingForCapture) return;
   if (!cookieBelongsToTarget(changeInfo.cookie, liveConfig)) return;
-  // Ignore cookie noise while the user is still on /login — wait for app URL.
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const activeUrl = tabs[0] && tabs[0].url;
     if (activeUrl) {
       const path = new URL(activeUrl).pathname;
       if (isAuthOrLoginPath(path)) return;
+      if (!isCaptureUrl(activeUrl, liveConfig)) return;
     }
   } catch (_) {
-    /* ignore */
+    return;
   }
-  scheduleSend("login", true);
+  scheduleSend("login", false);
 });
 
+// Tab complete: never force, never navigate — respects intervalHours.
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (navigatingForCapture) return;
   if (changeInfo.status !== "complete") return;
   const url = tab && tab.url;
   if (!url || !isTargetUrl(url, liveConfig)) return;
+  if (isAuthOrLoginPath(new URL(url).pathname)) return;
+  if (!isCaptureUrl(url, liveConfig)) return;
   try {
-    const force = isCaptureUrl(url, liveConfig);
     const result = await sendCookies({
       tabUrl: url,
-      force,
-      reason: force ? "tab-capture" : "tab-complete",
+      force: false,
+      reason: "tab-capture",
       networkCapture: lastNetworkCapture,
     });
     if (!result.ok && !result.throttled && !result.busy && !result.skipped) {
