@@ -83,6 +83,7 @@ function onBeforeSendHeaders(details) {
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
   if (!cookieHdr || !cookieHdr.value) return;
 
+  const hadWaiters = pendingCookieWaiters.length > 0;
   rememberNetworkCapture({
     cookieHeader: cookieHdr.value,
     url: details.url,
@@ -93,8 +94,8 @@ function onBeforeSendHeaders(details) {
     cookieHdr.value.length,
     details.url
   );
-  // If someone is waiting (Enviar agora), don't also auto-schedule.
-  if (pendingCookieWaiters.length === 0) {
+  // If Enviar agora is waiting for this header, don't auto-schedule a second send.
+  if (!hadWaiters) {
     scheduleSend("network-capture", true);
   }
 }
