@@ -13,7 +13,7 @@ const {
   buildPayload,
 } = CapturadorCookie;
 
-const EXTENSION_VERSION = "1.9.0";
+const EXTENSION_VERSION = "1.9.1";
 
 const DEBOUNCE_MS = 2000;
 const CAPTURE_FRESH_MS = 10 * 60 * 1000;
@@ -381,11 +381,17 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
 
     const now = Date.now();
     const isManual = reason === "send-now";
+    // Re-login: Cookie line changed. Do not wait 12h. Do not reload the page.
+    const isSessionRefresh = reason === "network-capture" || reason === "tab-capture";
 
     if (!isManual && now - lastAutoSendAt < AUTO_SEND_COOLDOWN_MS) {
       return { ok: false, error: "Auto-send cooldown", throttled: true };
     }
-    if (!force && !shouldSend(now, settings.lastSentAt, settings.intervalHours)) {
+    if (
+      !isManual &&
+      !isSessionRefresh &&
+      !shouldSend(now, settings.lastSentAt, settings.intervalHours)
+    ) {
       return { ok: false, error: "Throttle ativo", throttled: true };
     }
 
