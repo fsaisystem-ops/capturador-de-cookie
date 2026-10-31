@@ -13,7 +13,7 @@ const {
   buildPayload,
 } = CapturadorCookie;
 
-const EXTENSION_VERSION = "1.9.2";
+const EXTENSION_VERSION = "1.9.3";
 
 const DEBOUNCE_MS = 2000;
 const CAPTURE_FRESH_MS = 10 * 60 * 1000;
@@ -106,11 +106,19 @@ async function ensureCaptureHostPermission() {
 /** requestId -> cookie sent WITH the request (before Set-Cookie of the response). */
 const inflightDoc = new Map();
 
-function cookieHeaderFromJar(cookies) {
-  return (cookies || [])
-    .filter((c) => c && c.name)
-    .map((c) => `${c.name}=${c.value}`)
-    .join("; ");
+function usableNetworkCookie(url, header) {
+  if (!isCompleteCookieHeader(header)) return false;
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === "www.obraprimaweb.com.br" || host.endsWith(".obraprimaweb.com.br")) {
+    const h = header.toLowerCase();
+    return h.includes("asp.net_sessionid=") && h.includes("awsalb=");
+  }
+  return true;
 }
 
 function onBeforeSendHeaders(details) {
@@ -121,52 +129,24 @@ function onBeforeSendHeaders(details) {
   const headers = details.requestHeaders || [];
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
   const sent = cookieHdr && cookieHdr.value ? cookieHdr.value : "";
-  inflightDoc.set(details.requestId, {
-    url: details.url,
-    sentCookie: sent,
-    gotSetCookie: false,
-  });
-  // Do not send yet. The response may Set-Cookie a new session.
-  // F12 on the next view shows the cookies AFTER that Set-Cookie.
+  inflightDoc.set(details.requestId, { url: details.url, sentCookie: sent });
 }
 
-function onHeadersReceived(details) {
-  const row = inflightDoc.get(details.requestId);
-  if (!row) return;
-  const headers = details.responseHeaders || [];
-  const setCookie = headers.some((h) => h.name && h.name.toLowerCase() === "set-cookie");
-  if (setCookie) row.gotSetCookie = true;
-}
-
-async function onCompleted(details) {
+function onCompleted(details) {
   const row = inflightDoc.get(details.requestId);
   inflightDoc.delete(details.requestId);
-  if (!row) return;
-  if (details.method && details.method !== "GET") return;
-  if (!isCaptureUrl(details.url, liveConfig)) return;
-  if (isAuthOrLoginPath(new URL(details.url).pathname)) return;
-  if (navigatingForCapture || pendingCookieWaiters.length > 0) return;
+  if (!row || !row.sentCookie) return;
+  if (!isCaptureUrl(details.url || row.url, liveConfig)) return;
+  if (isAuthOrLoginPath(new URL(details.url || row.url).pathname)) return;
+  if (!usableNetworkCookie(details.url || row.url, row.sentCookie)) return;
 
-  // Let the browser store Set-Cookie before we read the jar.
-  await new Promise((r) => setTimeout(r, row.gotSetCookie ? 700 : 200));
-
-  let header = row.sentCookie;
-  if (row.gotSetCookie) {
-    try {
-      const jar = await chrome.cookies.getAll({ url: details.url });
-      const built = cookieHeaderFromJar(jar);
-      if (built) header = built;
-    } catch (e) {
-      console.warn("capturador-cookie jar after Set-Cookie:", e);
-    }
-  }
-  if (!isCompleteCookieHeader(header)) return;
-
+  // Exact Cookie line from the document request. Never rebuild with cookies.getAll.
   rememberNetworkCapture({
-    cookieHeader: header,
-    url: details.url,
+    cookieHeader: row.sentCookie,
+    url: details.url || row.url,
     method: "GET",
   });
+  if (navigatingForCapture || pendingCookieWaiters.length > 0) return;
   scheduleSend("network-capture", false);
 }
 
@@ -174,9 +154,6 @@ function bindWebRequest() {
   try {
     if (chrome.webRequest.onBeforeSendHeaders.hasListener(onBeforeSendHeaders)) {
       chrome.webRequest.onBeforeSendHeaders.removeListener(onBeforeSendHeaders);
-    }
-    if (chrome.webRequest.onHeadersReceived.hasListener(onHeadersReceived)) {
-      chrome.webRequest.onHeadersReceived.removeListener(onHeadersReceived);
     }
     if (chrome.webRequest.onCompleted.hasListener(onCompleted)) {
       chrome.webRequest.onCompleted.removeListener(onCompleted);
@@ -192,11 +169,6 @@ function bindWebRequest() {
       onBeforeSendHeaders,
       filter,
       ["requestHeaders", "extraHeaders"]
-    );
-    chrome.webRequest.onHeadersReceived.addListener(
-      onHeadersReceived,
-      filter,
-      ["responseHeaders", "extraHeaders"]
     );
     chrome.webRequest.onCompleted.addListener(onCompleted, filter);
   } catch (e) {
