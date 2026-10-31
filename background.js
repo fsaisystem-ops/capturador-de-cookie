@@ -13,7 +13,7 @@ const {
   buildPayload,
 } = CapturadorCookie;
 
-const EXTENSION_VERSION = "1.9.1";
+const EXTENSION_VERSION = "1.9.2";
 
 const DEBOUNCE_MS = 2000;
 const CAPTURE_FRESH_MS = 10 * 60 * 1000;
@@ -103,6 +103,16 @@ async function ensureCaptureHostPermission() {
   }
 }
 
+/** requestId -> cookie sent WITH the request (before Set-Cookie of the response). */
+const inflightDoc = new Map();
+
+function cookieHeaderFromJar(cookies) {
+  return (cookies || [])
+    .filter((c) => c && c.name)
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+}
+
 function onBeforeSendHeaders(details) {
   if (details.method !== "GET") return;
   if (!isCaptureUrl(details.url, liveConfig)) return;
@@ -110,32 +120,53 @@ function onBeforeSendHeaders(details) {
 
   const headers = details.requestHeaders || [];
   const cookieHdr = headers.find((h) => h.name.toLowerCase() === "cookie");
-  if (!cookieHdr || !cookieHdr.value) return;
-  if (!isCompleteCookieHeader(cookieHdr.value)) {
-    console.warn(
-      "capturador-cookie ignoring thin Cookie header",
-      cookieHdr.value.length,
-      details.url
-    );
-    return;
-  }
-
-  const hadWaiters = pendingCookieWaiters.length > 0;
-  rememberNetworkCapture({
-    cookieHeader: cookieHdr.value,
+  const sent = cookieHdr && cookieHdr.value ? cookieHdr.value : "";
+  inflightDoc.set(details.requestId, {
     url: details.url,
-    method: details.method,
+    sentCookie: sent,
+    gotSetCookie: false,
   });
-  console.log(
-    "capturador-cookie Network Cookie OK",
-    cookieHdr.value.length,
-    details.url
-  );
+  // Do not send yet. The response may Set-Cookie a new session.
+  // F12 on the next view shows the cookies AFTER that Set-Cookie.
+}
 
-  // While Enviar agora is waiting, only fulfill waiters — no extra auto-send.
-  if (navigatingForCapture || hadWaiters) return;
+function onHeadersReceived(details) {
+  const row = inflightDoc.get(details.requestId);
+  if (!row) return;
+  const headers = details.responseHeaders || [];
+  const setCookie = headers.some((h) => h.name && h.name.toLowerCase() === "set-cookie");
+  if (setCookie) row.gotSetCookie = true;
+}
 
-  // User opened the capture URL themselves → soft auto-send (no reload).
+async function onCompleted(details) {
+  const row = inflightDoc.get(details.requestId);
+  inflightDoc.delete(details.requestId);
+  if (!row) return;
+  if (details.method && details.method !== "GET") return;
+  if (!isCaptureUrl(details.url, liveConfig)) return;
+  if (isAuthOrLoginPath(new URL(details.url).pathname)) return;
+  if (navigatingForCapture || pendingCookieWaiters.length > 0) return;
+
+  // Let the browser store Set-Cookie before we read the jar.
+  await new Promise((r) => setTimeout(r, row.gotSetCookie ? 700 : 200));
+
+  let header = row.sentCookie;
+  if (row.gotSetCookie) {
+    try {
+      const jar = await chrome.cookies.getAll({ url: details.url });
+      const built = cookieHeaderFromJar(jar);
+      if (built) header = built;
+    } catch (e) {
+      console.warn("capturador-cookie jar after Set-Cookie:", e);
+    }
+  }
+  if (!isCompleteCookieHeader(header)) return;
+
+  rememberNetworkCapture({
+    cookieHeader: header,
+    url: details.url,
+    method: "GET",
+  });
   scheduleSend("network-capture", false);
 }
 
@@ -144,17 +175,30 @@ function bindWebRequest() {
     if (chrome.webRequest.onBeforeSendHeaders.hasListener(onBeforeSendHeaders)) {
       chrome.webRequest.onBeforeSendHeaders.removeListener(onBeforeSendHeaders);
     }
+    if (chrome.webRequest.onHeadersReceived.hasListener(onHeadersReceived)) {
+      chrome.webRequest.onHeadersReceived.removeListener(onHeadersReceived);
+    }
+    if (chrome.webRequest.onCompleted.hasListener(onCompleted)) {
+      chrome.webRequest.onCompleted.removeListener(onCompleted);
+    }
   } catch (_) {
     /* ignore */
   }
   const pattern = liveConfig && liveConfig.originPattern;
   if (!pattern) return;
+  const filter = { urls: [pattern], types: ["main_frame"] };
   try {
     chrome.webRequest.onBeforeSendHeaders.addListener(
       onBeforeSendHeaders,
-      { urls: [pattern], types: ["main_frame"] },
+      filter,
       ["requestHeaders", "extraHeaders"]
     );
+    chrome.webRequest.onHeadersReceived.addListener(
+      onHeadersReceived,
+      filter,
+      ["responseHeaders", "extraHeaders"]
+    );
+    chrome.webRequest.onCompleted.addListener(onCompleted, filter);
   } catch (e) {
     console.warn("capturador-cookie webRequest bind failed:", e);
   }
