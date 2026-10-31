@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Capturador de Cookie",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Captura o Cookie completo do Network (página logada) + storage e envia ao webhook.",
   "permissions": ["cookies", "storage", "tabs", "webRequest", "scripting"],
   "host_permissions": ["https://www.example.com/*"],

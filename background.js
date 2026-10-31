@@ -13,7 +13,7 @@ const {
   buildPayload,
 } = CapturadorCookie;
 
-const EXTENSION_VERSION = "1.8.0";
+const EXTENSION_VERSION = "1.9.0";
 
 const DEBOUNCE_MS = 2000;
 const CAPTURE_FRESH_MS = 10 * 60 * 1000;
@@ -443,21 +443,10 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       return { ok: false, error: "cookieHeader vazio" };
     }
 
-    const jar = await readCookiesForCaptureUrl();
-    const webStorage = await readWebStorageFromTab(capture.url);
-
-    const payload = buildPayload({
-      url: capture.url,
-      cookies: jar,
+    // Webhook body is ONLY the Cookie line from the Network GET (same as F12).
+    const payload = {
       cookieHeader: capture.cookieHeader,
-      capturedAt: new Date().toISOString(),
-      request: { url: capture.url, method: capture.method || "GET" },
-      config: liveConfig,
-      webStorage,
-    });
-    payload.trigger = reason || "auto";
-    payload.captureSource = "webRequest";
-    payload.cookieHeader = capture.cookieHeader;
+    };
 
     if (
       !isManual &&
@@ -483,9 +472,8 @@ async function sendCookies({ tabUrl, force, reason, networkCapture }) {
       return {
         ok: true,
         status: res.status,
-        cookieCount: payload.cookieNames.length,
+        cookieCount: (payload.cookieHeader || "").split(";").filter((s) => s.trim()).length,
         captureSource: "webRequest",
-        storageSource: payload.storageSource,
         requestUrl: capture.url,
         cookieHeaderLength: payload.cookieHeader.length,
       };
